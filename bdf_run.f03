@@ -11,7 +11,7 @@ program bdf_program
   t_stop = 40.0d0
 !  t_stop = 1d4
 !  t_stop = 1d11
-  dt = 1d-3
+  dt = 1d-4
   y = (/ double precision :: 1, 0, 0 /)
 
 !  call SolveLinearSystem(nvector,neq,r,y, dt)

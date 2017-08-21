@@ -5,14 +5,14 @@ contains
   subroutine SolveODE_BDF(neq, nvector, y, t, t_stop, dt)
     implicit none
     integer :: neq,nvector, order, iterator
-    double precision, dimension(neq) :: y, rhs
+    double precision, dimension(neq) :: y, rhs, el
     double precision, dimension(neq,6) :: y_old
     double precision :: t, t_old, t_stop, dt
     double precision, dimension(neq) :: dy, res
     intent(inout) :: y
 
+    ! load initial condition into Nordsieck array
     order = 1
-    y_old(:,1) = y
     y_old(:,1) = y
 
     iterator = 0
@@ -23,9 +23,9 @@ contains
       call SolveLinearSystem(nvector,neq,order,y,y_old,dt)
       t = t + dt
 
-      call CalcOrder(order,iterator)
+!      call CalcOrder(order,iterator)
+
       iterator = iterator + 1
-!      print *, order, iterator
     end do
   end subroutine
 
@@ -33,58 +33,108 @@ contains
   subroutine SolveLinearSystem(nvector,neq,order,y,y_old,h)
     implicit none
     integer :: neq, nvector, order
-    double precision, dimension(neq) :: dy, res, y, rhs, dy_old
+    double precision, dimension(neq) :: dy, res, y, rhs, dy_old, y_null, el, rhs_init, del, y_safe
     double precision, dimension(neq,6) :: y_old
     double precision, dimension(neq,neq) :: L, U
-    double precision, dimension(nvector,neq,6) :: yh
+    double precision, dimension(7,6) :: coeff
     double precision :: theta, sigma, tol, error, absdy, h, t, beta
     integer :: i, j, iterator
     intent(inout) :: y_old, y
     intent(in) :: nvector, neq, h
 
+! NORDSIECK VERSION
+    coeff = reshape((/ double precision :: &
+          1.       , 1. , 0.        , 0.       , 0.        , 0.      , 0.       , &
+          2./3.    , 1. , 1./3.     , 0.       , 0.        , 0.      , 0.       , &
+          6./11.   , 1. , 6./11.    , 1./11.   , 0.        , 0.      , 0.       , &
+          12./25.  , 1. , 7./10.    , 1./5.    , 1./50.    , 0.      , 0.       , &
+          60./137. , 1. , 225./274. , 85./274. , -15./274. , 1./274. , 0.       , &
+          20./49.  , 1. , 58./63.   , 5./12.   , -25./252. , 1./84.  , 1./1764. /), &
+          shape(coeff))
+
+    ! general variables
     sigma = 0.01d0
     beta = 1.0d0
     tol = 1d-12
     error = HUGE(tol)
 
+    ! initialize solution arrays
+    y_null = y
+
     ! use the LU matrices from the predictor value
     call GetLU(neq,y,t,beta,h,L,U)
-    call CalcRHS(neq,y_old(:,1),rhs)
 
-    ! newton iteration
+    ! Calculate initial right hand side
+    call CalcRHS(neq,y_old(:,1),rhs_init)
+    y_old(:,2) = h*rhs_init
+
+    ! some initializations
     iterator = 0
     dy_old = 1.0
-    y = y_old(:,1) + h*rhs
+    del = 0.0
 
-    do while (error > sigma*tol)
-      ! calculates the residuum
-      call CalcResiduum(nvector,neq,y,y_old,order,h,beta,res)
+
+    ! predictor step
+    call PredictSolution(neq,order,y_old,el)
+
+!    do while (error > sigma*tol)
+    do while (iterator < 10)
+
+      ! calculates residuum
+      call CalcResiduum(nvector,neq,y,y_null,y_old,el,rhs_init,order,h,beta,res)
 
       ! calculates the solution for dy with given residuum
-      call SolveLU(neq,L,U,res,dy)
-      y = y - dy
+      call SolveLU(neq,L,U,res,del)
 
+      ! add to error
+      el = el + del
+
+      dy = coeff(1,order)*el
+
+      y = y_null + dy
+
+      ! additional stuff
       theta = norm2(dy)/norm2(dy_old)
       error = theta/(1.-theta)*norm2(dy)
       dy_old = dy
-
       iterator = iterator + 1
     end do
 
     ! rewrite history array
-!    call UpdateNordsieck(y_old)
-    y_old(:,5) = y_old(:,4)
-    y_old(:,4) = y_old(:,3)
-    y_old(:,3) = y_old(:,2)
-    y_old(:,2) = y_old(:,1)
-    y_old(:,1) = y
+    call UpdateNordsieck(neq, order, coeff, el, y_old)
   end subroutine
 
-!  subroutine UpdateNordsieck(coeff, y_old)
-!    double precision, dimension(7,6) :: y_old
-!
-!    y_old = (1 - 10.)*
-!  end subroutine
+  subroutine UpdateNordsieck(neq, order, coeff, el, y_old)
+    integer :: neq,i,j, order
+    double precision, dimension(neq) :: el
+    double precision, dimension(neq,6) :: y_old
+    double precision, dimension(7,6) :: coeff
+    double precision :: h, one, et
+
+    do j = 1,order+1
+      do i = 1,neq
+        y_old(i,j) = y_old(i,j) + el(i)*coeff(order,j)
+      end do
+    end do
+  end subroutine
+
+  subroutine PredictSolution(neq,order,y_old,el)
+    implicit none
+    integer :: i,j,k,order,neq
+    double precision, dimension(neq,6) :: y_old
+    double precision, dimension(neq) :: el
+    intent (in) :: neq,order
+    intent (inout) :: y_old
+    intent (out) :: el
+
+    ! this loop effectively solves the Pascal Triangle without multiplications
+    do k = 0,order-1
+      do j = order,k-1
+        y_old(:,j-1) = y_old(:,j) + y_old(:,j-1)
+      end do
+    end do
+    el = 0.0
+  end subroutine
 
 
   !> Solve the System \f$ LUx=r \f$
@@ -157,50 +207,23 @@ contains
   !!    r = y_n - \sum_{i=1}^{order} \alpha_i * y_{n-i} - h \beta_0 f(t_n, y_n).
   !! \f]
   !! For a converging system \f$ r \approx 0 \f$ should become true.
-  subroutine CalcResiduum(nvector,neq,y,y_old,order,h,beta,res)
+  subroutine CalcResiduum(nvector,neq,y,y_null,y_old,el,rhs_init,order,h,beta,res)
     implicit none
-    integer :: neq,nvector
-    double precision, dimension(neq) :: y, rhs, a, res
+    integer :: neq,nvector,order
+    double precision, dimension(neq) :: y, y_null, rhs, a, res, el, rhs_init
     double precision, dimension(neq,6) :: y_old
-    double precision, dimension(nvector,neq,6) :: yh
     double precision :: h, beta, t
-    integer :: order, i, j
-    double precision, dimension(8,6) :: coeff           !< coefficients of bdf-formula
-    intent (in) :: y, y_old, nvector, neq, order, h, beta
+    integer :: i, j
+    double precision, dimension(7,6) :: coeff           !< coefficients of bdf-formula
+    intent (in) :: y, y_old, nvector, neq, order, h, beta, el
     intent (out) :: res
-
 
     call CalcRHS(neq,y,rhs)
 
-    ! the coefficients in the form of whole integers
-    coeff = reshape((/ double precision :: &
-         1.  , 1.   , -1.   , 0.   , 0.    , 0.   , 0.   , 0.  ,&
-         2./3.  , 1.   , -4./3.   , 1./3.   , 0.    , 0.   , 0.   , 0.  ,&
-         6./11.  , 1.  , -18./11.  , 9./11.   , -2./11.   , 0.   , 0.   , 0.  ,&
-         12./25. , 1.  , -48./25.  , 36./25.  , -16./25.  , 3./25.   , 0.   , 0.  ,&
-         60./137. , 1. , -300./137. , 300./137. , -200./137. , 75./137.  , -12./137. , 0.  ,&
-         60./147. , 1. , -360./147. , 450./147. , -400./147. , 225./147. , -72./147. , 10./147. /), &
-         shape(coeff))
-
-    a = 0
-    do i = 1,order
-      a = a + coeff(i+2,order)*y_old(:,i)
+    res = 0
+    do i = 0, order
+      res = h*rhs - h*y_old(:,2) - el
     end do
-
-    res = - coeff(1,order)*h*rhs + coeff(2,order)*y + a
-
-
-!! NORDSIECK VERSION
-!    coeff = reshape((/ double precision :: &
-!          1.       , 1. , 0.        , 0.       , 0.        , 0.      , 0.       , &
-!          2./3.    , 1. , 1./3.     , 0.       , 0.        , 0.      , 0.       , &
-!          6./11.   , 1. , 6./11.    , 1./11.   , 0.        , 0.      , 0.       , &
-!          12./25.  , 1. , 7./10.    , 1./5.    , 1./50.    , 0.      , 0.       , &
-!          60./137. , 1. , 225./274. , 85./274. , -15./274. , 1./274. , 0.       , &
-!          20./49.  , 1. , 58./63.   , 5./12.   , -25./252. , 1./84.  , 1./1764. /), &
-!
-
-
   end subroutine
 
   !> Example case for the right-hand-side
