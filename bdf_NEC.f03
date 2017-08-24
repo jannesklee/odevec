@@ -25,7 +25,7 @@ contains
     ! load initial condition into Nordsieck array
     order = 1
     y_NS(:,1) = y
-
+    en = 0.0
 
     ! initial conditions
     iterator = 0
@@ -36,7 +36,7 @@ contains
     do while (t <= t_stop)
 
       ! solve the system
-      call SolveLinearSystem(nvector,neq,order,coeff,y,y_NS,dt)
+      call SolveLinearSystem(nvector,neq,order,coeff,en,y,y_NS,dt)
 
       print *, t, y
 
@@ -60,14 +60,15 @@ contains
   !!    - checking for sanity
   !!    - checking step-size & order
   !!      - change appropriately
-  subroutine SolveLinearSystem(nvector,neq,order,coeff,y,y_NS,dt)
+  subroutine SolveLinearSystem(nvector,neq,order,coeff,en_old,y,y_NS,dt)
     implicit none
     integer :: neq, nvector, order
-    double precision, dimension(neq) :: dy, res, y, rhs, dy_NS, y_null, en, rhs_init, den, y_safe, err_weight
+    double precision, dimension(neq) :: dy, res, y, rhs, dy_NS, y_null, rhs_init, den, y_safe, err_weight
+    double precision, dimension(neq) :: en_old, en
     double precision, dimension(neq,6) :: y_NS
     double precision, dimension(neq,neq) :: L, U
     double precision, dimension(7,6) :: coeff
-    double precision :: theta, sigma, tol, error, absdy, dt, t, beta, ss_ratio, rtol, atol, error_old
+    double precision :: theta, sigma, tol, error, absdy, dt, t, beta, rtol, atol, dt_scale
     integer :: i, j, iterator
     intent(inout) :: y_NS, y, dt
     intent(in) :: nvector, neq
@@ -79,7 +80,7 @@ contains
     beta = 1.0d0
     theta = HUGE(1d0)
     rtol = 1d-4
-    atol = 1d-20
+    atol = 1d-10
 
     ! initialize solution arrays
     y_null = y
@@ -100,14 +101,14 @@ contains
 
 
     ! 2. predictor --------------------------------------------------------------------------------!
-    ! predictor step
+    ! predictor step - y_NS by values, en=0.0
     call PredictSolution(neq,order,y_NS,en)
 
     ! 3. corrector --------------------------------------------------------------------------------!
     iterator  = 0
     error = 0.7d0
 
-    do while (error > tau(order,coeff)/(2d0*(order + 2d0)))
+    do while (error > tau(order,order,coeff)/(2d0*(order + 2d0)))
       ! calculates residuum
       call CalcResiduum(nvector,neq,y,y_null,y_NS,en,rhs_init,order,dt,beta,res)
 
@@ -124,23 +125,61 @@ contains
       call CheckConvergence(neq,res,err_weight,error)
 
       iterator = iterator + 1
-      error_old = error
     end do
-
-    ! 4. sanity checks/step size/order ------------------------------------------------------------!
-    ! check error
-    theta = WeightedNorm(neq,en,err_weight)/tau(order,coeff)
-    ss_ratio = (1d0/theta)**(1d0/(order+1d0))
-    print *, ss_ratio
-
     ! rewrite history array
     call UpdateNordsieck(neq, order, coeff, en, y_NS)
-    ! if necessary calculate new order and ad column to history array
-    call CalcOrder(neq,coeff,order,y_NS)
-    ! order change must be done before, because step size changes
-    call SetStepSize(neq,order,ss_ratio,y_NS,dt)
+
+    ! 4. sanity checks & step-size/order control --------------------------------------------------!
+    ! calculate step size for current, upper & lower order and use largest one
+    ! additionally it changes the order and enlarges the Nordsieck history array if necessary
+    call CalcStepSizeOrder(neq,order,coeff,err_weight,en,en_old,y_NS,dt_scale)
+
+    ! Adjust the Nordsieck history array with new step size & new order
+    call SetStepSize(neq,order,dt_scale,y_NS,dt)
+    en_old = en
   end subroutine SolveLinearSystem
 
+
+  !> Calculates the step-sizes of different orders and selects largest one
+  !!
+  !!
+  subroutine CalcStepSizeOrder(neq,order,coeff,err_weight,en,en_old,y_NS,dt_scale)
+    implicit none
+    integer :: neq, order, i, dt_maxloc, maxorder
+    double precision, dimension(7,6) :: coeff
+    double precision, dimension(neq) :: en, err_weight, en_old
+    double precision, dimension(neq,6) :: y_NS
+    double precision :: dt_scale, dt_scale_up, dt_scale_down
+    intent(in) :: neq, coeff, err_weight, en
+    intent(inout) :: order
+    intent(out) :: dt_scale
+
+    ! calculate all estimated step sizes
+    dt_scale_down = (tau(order,order-1,coeff)/WeightedNorm(neq,y_NS(:,order),err_weight))**(1d0/order)
+    dt_scale = (tau(order,order,coeff)/WeightedNorm(neq,en,err_weight))**(1d0/(order+1d0))
+    dt_scale_up = (tau(order,order+1,coeff)/WeightedNorm(neq,en-en_old,err_weight))**(1d0/(order+2d0))
+
+
+    ! choose largest and search for location of largest
+    dt_maxloc = maxloc((/ dt_scale_down, dt_scale, dt_scale_up /),DIM=1)
+    dt_scale = maxval((/ dt_scale_down, dt_scale, dt_scale_up /))
+
+    ! set new order
+    maxorder = 5
+    if (order == maxorder .OR. order == 1) then
+      ! do nothing
+    else
+      if (dt_maxloc == 1) then
+        order = order - 1
+      else if (dt_maxloc == 2) then
+        ! do nothing
+      else if (dt_maxloc == 3) then ! enlarge Nordsieck array by 1
+        order = order + 1
+        y_NS(i,order+1) = coeff(order,order)*en(i)/(order+1d0)
+      end if
+    end if
+    print *, order, dt_maxloc, dt_scale
+  end subroutine
 
   !> Calculates the error for convergence
   subroutine CheckConvergence(neq,res,weight,error)
@@ -156,7 +195,6 @@ contains
     conv_rate = max(0.2d0*conv_rate,error_tmp/error)
 
     error = error_tmp*min(1d0,1.5d0*conv_rate)
-
   end subroutine CheckConvergence
 
 
@@ -167,7 +205,7 @@ contains
     double precision, dimension(neq) :: en, weight
     double precision :: WeightedNorm
 
-    WeightedNorm = sqrt(sum(en*weight*en*weight)/neq)
+    WeightedNorm = sqrt(sum(en*en*weight*weight)/neq)
   end function WeightedNorm
 
   !>
@@ -238,12 +276,14 @@ contains
     intent (inout) :: y_NS
     intent (out) :: en
 
-    ! this loop effectiveny solves the Pascal Triangle without multiplications
+    ! this loop effectively solves the Pascal Triangle without multiplications
     do k = 0,order-1
       do j = order,k-1
         y_NS(:,j-1) = y_NS(:,j) + y_NS(:,j-1)
       end do
     end do
+
+    ! set the correction vector to zero
     en = 0.0
   end subroutine PredictSolution
 
@@ -359,36 +399,33 @@ contains
 
 
   !>
-  subroutine CalcOrder(neq,coeff,order,y_NS)
-    implicit none
-    integer :: i
-    integer :: order, maxorder, iterator, neq
-    double precision, dimension(7,6) :: coeff
-    double precision, dimension(neq,6) :: y_NS
-    double precision, dimension(neq) :: en
-    intent(inout) :: order
-
-    ! \todo{chose order by timestep estimation}
-    maxorder = 5
-!    if (iterator < 3) then
-!      order = 1
-!    ense
-      if (order < maxorder) then
-        order = order + 1
-      else
-        order = maxorder
-      end if
-
-      do i=1,neq
-        y_NS(i,order+1) = coeff(i,order)*en(i)/(order+1d0)
-      end do
-  end subroutine CalcOrder
+!  subroutine CalcOrder(neq,coeff,order,y_NS)
+!    implicit none
+!    integer :: i
+!    integer :: order, maxorder, iterator, neq
+!    double precision, dimension(7,6) :: coeff
+!    double precision, dimension(neq,6) :: y_NS
+!    double precision, dimension(neq) :: en
+!    intent(inout) :: order
+!
+!    ! \todo{chose order by timestep estimation}
+!    maxorder = 5
+!!    if (iterator < 3) then
+!!      order = 1
+!!    ense
+!      if (order < maxorder) then
+!        order = order + 1
+!      else
+!        order = maxorder
+!      end if
+!
+!  end subroutine CalcOrder
 
 
   !>
-  function tau(order,coeff)
+  function tau(order,order2,coeff)
     implicit none
-    integer :: i, order
+    integer :: i, order, order2
     double precision :: tau, faculty
     double precision, dimension(7,6) :: coeff
     intent(in) :: coeff, order
@@ -398,7 +435,7 @@ contains
       faculty = faculty*i
     end do
 
-    tau = (order+1d0)/(faculty*coeff(order,order))
+    tau = (order2+1d0)/(faculty*coeff(order,order))
 
     return
   end function tau
