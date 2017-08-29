@@ -43,7 +43,7 @@ contains
 
       print *, t, y
 
-      call CalcOrder(neq,coeff,iterator,order,y_NS)
+!      call CalcOrder(neq,coeff,iterator,order,y_NS)
       iterator = iterator + 1
     end do
 
@@ -111,13 +111,14 @@ contains
     ! 2. predictor --------------------------------------------------------------------------------!
     ! predictor step - set predicted y_NS, en=0.0
     call PredictSolution(neq,order,y_NS,en)
+    y = y_NS(:,0)
 
     ! 3. corrector --------------------------------------------------------------------------------!
     iterator  = 0
     error = HUGE(1d0)
 
-    do while (error > 1d0)!  .AND. iterator < maxiter)
-!    do while (iterator < maxiter)
+!    do while (error > 1d0)!  .AND. iterator < maxiter)
+    do while (iterator < maxiter)
       ! calculates residuum
       call CalcResiduum(nvector,neq,y,y_NS,en,rhs_init,order,dt,beta,res)
 
@@ -129,8 +130,6 @@ contains
       en = en + den
       dy = coeff(0,order)*en
       y = y_NS(:,0) + dy
-
-!      print *, en
 
       ! convergence tests - if failed run again with smaller step size
 !      call CheckConvergence(neq,order,coeff,conv_rate,res,err_weight,convergence)
@@ -147,10 +146,10 @@ contains
     ! 4. sanity checks & step-size/order control --------------------------------------------------!
     ! calculate step size for current, upper & lower order and use largest one
     ! additionally it changes the order and enlarges the Nordsieck history array if necessary
-    !call CalcStepSizeOrder(neq,order,coeff,err_weight,en,en_old,y_NS,dt_scale)
+    call CalcStepSizeOrder(neq,order,coeff,err_weight,en,en_old,y_NS,dt_scale)
 
     ! Adjust the Nordsieck history array with new step size & new order
-    !call SetStepSize(neq,order,dt_scale,y_NS,dt)
+    call SetStepSize(neq,order,dt_scale,y_NS,dt)
     en_old = en
   end subroutine SolveLinearSystem
 
@@ -173,7 +172,6 @@ contains
     dt_scale = (tau(order,order,coeff)/WeightedNorm(neq,en,err_weight))**(1d0/(order+1d0))
     dt_scale_up = (tau(order,order+1,coeff)/WeightedNorm(neq,en-en_old,err_weight))**(1d0/(order+2d0))
 
-    print *, dt_scale_down, dt_scale, dt_scale_up
 
     ! choose largest and search for location of largest
     dt_maxloc = maxloc((/ dt_scale_down, dt_scale, dt_scale_up /),DIM=1)
@@ -181,16 +179,20 @@ contains
 
     ! set new order
     maxorder = 5
-    if (order == maxorder .OR. order == 1) then
-      ! do nothing
-    else
-      if (dt_maxloc == 1) then
+    if (dt_maxloc == 1) then
+      if (order /= 1) then
         order = order - 1
-      else if (dt_maxloc == 2) then
+      else
         ! do nothing
-      else if (dt_maxloc == 3) then ! enlarge Nordsieck array by 1
+      end if
+    else if (dt_maxloc == 2) then
+      ! do nothing
+    else if (dt_maxloc == 3) then ! enlarge Nordsieck array by 1
+      if (order /= maxorder) then
         y_NS(:,order+1) = coeff(order,order)*en(:)/(order+1d0)
         order = order + 1
+      else
+        ! do nothing
       end if
     end if
   end subroutine
@@ -220,13 +222,13 @@ contains
     end if
   end subroutine CheckConvergence
 
-
-  !>
+  !> Weighted Norm
   function WeightedNorm(neq,en,weight)
     implicit none
     integer :: neq
     double precision, dimension(neq) :: en, weight
     double precision :: WeightedNorm
+    intent(in) :: en, weight
 
     WeightedNorm = sqrt(sum(en*en*weight*weight)/neq)
   end function WeightedNorm
@@ -258,7 +260,7 @@ contains
     intent(in) :: order,dt_scale,neq
 
     dtt_scale = 1.0
-    do j = 0,order
+    do j = 1,order
       dtt_scale = dt_scale*dtt_scale
       y_NS(:,j) = y_NS(:,j)*dtt_scale
     end do
@@ -397,7 +399,6 @@ contains
 
     call CalcRHS(neq,y,rhs)
 
-!    res = dt*rhs - dt*y_NS(:,2) - en
     res = dt*rhs - y_NS(:,1) - en
   end subroutine CalcResiduum
 

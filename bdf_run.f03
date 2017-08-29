@@ -9,9 +9,9 @@ program bdf_program
 
   t_start = 0.0d0
   t_stop = 40.0d0
-!  t_stop = 1d4
+!  t_stop = 1d6
 !  t_stop = 1d11
-  dt = 1d-4
+  dt = 1d-6
   y = (/ double precision :: 1, 0, 0 /)
 
 !  call SolveLinearSystem(nvector,neq,r,y, dt)
