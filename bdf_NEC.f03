@@ -201,9 +201,9 @@ contains
 
     ! calculate all estimated step sizes
     ! \todo check if order is correct here
-    dt_scale_down = (tau(order,order-1,coeff)/WeightedNorm(neq,y_NS(:,order),err_weight))**(1d0/order)
-    dt_scale = (tau(order,order,coeff)/WeightedNorm(neq,en,err_weight))**(1d0/(order+1d0))
-    dt_scale_up = (tau(order,order+1,coeff)/WeightedNorm(neq,en-en_old,err_weight))**(1d0/(order+2d0))
+    dt_scale_down = 1.d0/(1.3*(WeightedNorm(neq,y_NS(:,order),err_weight)/tau(order,order-1,coeff))**(1d0/order) + 1d-6)
+    dt_scale = 1.d0/(1.2*(WeightedNorm(neq,en,err_weight)/tau(order,order,coeff))**(1d0/(order+1d0)) + 1d-6)
+    dt_scale_up = 1.d0/(1.4*(WeightedNorm(neq,en-en_old,err_weight)/tau(order,order+1,coeff))**(1d0/(order+2d0)) + 1d-6)
 
     ! choose largest and search for location of largest
     dt_maxloc = maxloc((/ dt_scale_down, dt_scale, dt_scale_up /),DIM=1)
