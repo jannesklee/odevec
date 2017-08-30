@@ -49,7 +49,7 @@ contains
 
     call cpu_time(finish)
     print '("")'
-    print '("Time = ",f6.3," seconds.")',finish-start
+    print '("Time = ", f10.8, " seconds.")', finish-start
   end subroutine
 
 
@@ -70,14 +70,14 @@ contains
   subroutine SolveLinearSystem(nvector,neq,order,coeff,en_old,y,y_NS,dt)
     implicit none
     integer :: neq, nvector, order
-    double precision, dimension(neq) :: dy, res, y, rhs, y_null, rhs_init, den, y_safe, err_weight
+    double precision, dimension(neq) :: dy, res, y, rhs, rhs_init, den, y_safe, err_weight
     double precision, dimension(neq) :: en_old, en
-    double precision, dimension(neq,0:6) :: y_NS
+    double precision, dimension(neq,0:6) :: y_NS, y_NS_old
     double precision, dimension(neq,neq) :: L, U
     double precision, dimension(0:6,6) :: coeff
     double precision :: theta, sigma, tol, error, absdy, dt, t, beta, rtol, atol, dt_scale, conv_rate
-    logical :: convergence
-    integer :: i, j, iterator, maxiter
+    logical :: converged,nosuccess
+    integer :: i, j, iterator, maxiter, k
     intent(inout) :: y_NS, y, dt, en_old, order
     intent(in) :: nvector, neq, coeff
 
@@ -89,13 +89,12 @@ contains
     theta = HUGE(1d0)
     rtol = 1d-4
     atol = 1d-9
-    maxiter = 5
-
-    ! initialize solution arrays
-    y_null = y
+    maxiter = 3
 
     ! use the LU matrices from the predictor value
     call GetLU(neq,y,t,beta,dt,L,U)
+
+
 
     ! Calculate initial right hand side
     call CalcRHS(neq,y_NS(:,0),rhs_init)
@@ -103,42 +102,54 @@ contains
 
     ! some initializations
     iterator = 0
-    den = 0.0
+    den = 0.0d0
+    conv_rate = 0.7d0
+    converged=.True.
 
     ! important quantity to measure density
     call CalcErrorWeight(neq,rtol,atol,y,err_weight)
 
     ! 2. predictor --------------------------------------------------------------------------------!
-    ! predictor step - set predicted y_NS, en=0.0
-    call PredictSolution(neq,order,y_NS,en)
-    y = y_NS(:,0)
+    nosuccess = .TRUE.
+    predictor: do while(nosuccess)
+      ! predictor step - set predicted y_NS, en=0.0
+      call PredictSolution(neq,order,y_NS,en)
+      y = y_NS(:,0)
 
-    ! 3. corrector --------------------------------------------------------------------------------!
-    iterator  = 0
-    error = HUGE(1d0)
+      ! 3. corrector ------------------------------------------------------------------------------!
+      iterator  = 0
+      error = HUGE(1d0)
 
-!    do while (error > 1d0)!  .AND. iterator < maxiter)
-    do while (iterator < maxiter)
-      ! calculates residuum
-      call CalcResiduum(nvector,neq,y,y_NS,en,rhs_init,order,dt,beta,res)
+!      do while (error > 1d0)!  .AND. iterator < maxiter)
+      corrector: do while (iterator < maxiter)
+        ! calculates residuum
+        call CalcResiduum(nvector,neq,y,y_NS,en,rhs_init,order,dt,beta,res)
 
-      ! calculates the solution for dy with given residuum
-      ! \todo this function needs to be enhanced for sparse matrices
-      call SolveLU(neq,L,U,res,den)
+        ! calculates the solution for dy with given residuum
+        ! \todo this function needs to be enhanced for sparse matrices
+        call SolveLU(neq,L,U,res,den)
 
-      ! add correction to solution vector
-      en = en + den
-      dy = coeff(0,order)*en
-      y = y_NS(:,0) + dy
+        ! add correction to solution vector
+        en = en + den
+        dy = coeff(0,order)*en
+        y = y_NS(:,0) + dy
 
-      ! convergence tests - if failed run again with smaller step size
-!      call CheckConvergence(neq,order,coeff,conv_rate,res,err_weight,convergence)
+        ! convergence test:
+        ! if fail reset and run again starting at predictor step with 0.25 times the step-size
+        call CheckConvergence(neq,order,iterator,coeff,conv_rate,den,err_weight,converged)
+        if (.not. converged) then
+          call ResetSystem(neq,order,dt_scale,y_NS,dt)
+          cycle predictor
+        end if
 
-      ! local trucation error this is used for
-      error = WeightedNorm(neq,en,err_weight)/tau(order,order,coeff)
+        ! local trucation error this is used for
+        error = WeightedNorm(neq,en,err_weight)/tau(order,order,coeff)
+        iterator = iterator + 1
+      end do corrector
 
-      iterator = iterator + 1
-    end do
+      nosuccess = .FALSE.
+    end do predictor
+
 
     ! rewrite history array
     call UpdateNordsieck(neq, order, coeff, en, y_NS)
@@ -152,6 +163,28 @@ contains
     call SetStepSize(neq,order,dt_scale,y_NS,dt)
     en_old = en
   end subroutine SolveLinearSystem
+
+
+  !>
+  subroutine ResetSystem(neq,order,dt_scale,y_NS,dt)
+    implicit none
+    integer :: neq, order, j, k
+    double precision :: dt_scale, dt
+    double precision, dimension(neq,0:6) :: y_NS
+    intent(in) :: neq, order
+    intent(inout) :: y_NS, dt
+
+    dt_scale = 0.25d0
+
+    ! set the matrix back to old value
+    do k = 0,order-1
+      do j = order,k+1,-1
+        y_NS(:,j-1) = y_NS(:,j-1) - y_NS(:,j)
+      end do
+    end do
+
+    call SetStepSize(neq,order,dt_scale,y_NS,dt)
+  end subroutine
 
 
   !> Calculates the step-sizes and uses according orders
@@ -171,7 +204,6 @@ contains
     dt_scale_down = (tau(order,order-1,coeff)/WeightedNorm(neq,y_NS(:,order),err_weight))**(1d0/order)
     dt_scale = (tau(order,order,coeff)/WeightedNorm(neq,en,err_weight))**(1d0/(order+1d0))
     dt_scale_up = (tau(order,order+1,coeff)/WeightedNorm(neq,en-en_old,err_weight))**(1d0/(order+2d0))
-
 
     ! choose largest and search for location of largest
     dt_maxloc = maxloc((/ dt_scale_down, dt_scale, dt_scale_up /),DIM=1)
@@ -197,30 +229,34 @@ contains
     end if
   end subroutine
 
+
   !> Calculates the error for convergence
-  subroutine CheckConvergence(neq,order,coeff,conv_rate,res,weight,convergence)
+  subroutine CheckConvergence(neq,order,iterator,coeff,conv_rate,den,weight,converged)
     implicit none
-    integer :: neq, order
-    logical :: convergence
+    integer :: neq, order, iterator
+    logical :: converged
     double precision :: conv_rate, border, error_tmp, error, init_val
-    double precision, dimension(neq) :: res, weight, y
+    double precision, dimension(neq) :: den, weight, y
     double precision, dimension(0:6,6) :: coeff
-    intent(in) :: neq, res, weight
-    intent(out) :: convergence
+    intent(in) :: neq, den, weight
+    intent(out) :: converged
     intent(inout) :: conv_rate
 
-    error_tmp = WeightedNorm(neq,res,weight)
-
+    error_tmp = WeightedNorm(neq,den,weight)
     conv_rate = max(0.2d0*conv_rate,error_tmp/error)
-
     error = error_tmp*min(1d0,1.5d0*conv_rate)
 
-    if (error < tau(order,order,coeff)/(2d0*(order + 2d0))) then
-      convergence = .TRUE.
+!    print *, "convergence error:", error, "tolerance:", tau(order,order,coeff)/(2d0*(order + 2d0))
+
+    if (iterator == 2 .and. error > 2d0) then
+      converged = .FALSE.
+    else if (iterator > 2 .and. error > tau(order,order,coeff)/(2d0*(order + 2d0))) then
+      converged = .FALSE.
     else
-      convergence = .FALSE.
+      converged = .TRUE.
     end if
   end subroutine CheckConvergence
+
 
   !> Weighted Norm
   function WeightedNorm(neq,en,weight)
@@ -232,6 +268,7 @@ contains
 
     WeightedNorm = sqrt(sum(en*en*weight*weight)/neq)
   end function WeightedNorm
+
 
   !>
   subroutine CalcErrorWeight(neq,rtol,atol,y,err_weight)
@@ -259,6 +296,7 @@ contains
     intent(inout) :: y_NS,dt
     intent(in) :: order,dt_scale,neq
 
+
     dtt_scale = 1.0
     do j = 1,order
       dtt_scale = dt_scale*dtt_scale
@@ -266,6 +304,7 @@ contains
     end do
 
     dt = dt*dt_scale
+!    print *, "timestep:", dt, "timescale:", dt_scale
   end subroutine SetStepSize
 
 
@@ -389,7 +428,7 @@ contains
   subroutine CalcResiduum(nvector,neq,y,y_NS,en,rhs_init,order,dt,beta,res)
     implicit none
     integer :: neq,nvector,order
-    double precision, dimension(neq) :: y, y_null, rhs, a, res, en, rhs_init
+    double precision, dimension(neq) :: y, rhs, a, res, en, rhs_init
     double precision, dimension(neq,0:6) :: y_NS
     double precision :: dt, beta, t
     integer :: i, j
