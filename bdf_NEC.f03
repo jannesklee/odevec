@@ -5,11 +5,10 @@ contains
   subroutine SolveODE_BDF(neq, nvector, y, t, t_stop, dt)
     implicit none
     integer :: neq,nvector, order, iterator
-    double precision, dimension(neq) :: y, rhs, en
+    double precision, dimension(neq) :: y, en
     double precision, dimension(neq,0:6) :: y_NS
     double precision, dimension(0:6,6) :: coeff
-    double precision :: t, t_old, t_stop, dt, r, rtol, atol, start, finish
-    double precision, dimension(neq) :: dy, res
+    double precision :: t, t_stop, dt, start, finish
     intent(inout) :: y
 
     ! bdf-matrix with Nordsieck representation
@@ -39,8 +38,6 @@ contains
       ! solve the system
       call SolveLinearSystem(nvector,neq,order,coeff,en,y,y_NS,t,dt)
 
-
-!      call CalcOrder(neq,coeff,iterator,order,y_NS)
       iterator = iterator + 1
     end do
 
@@ -67,14 +64,14 @@ contains
   subroutine SolveLinearSystem(nvector,neq,order,coeff,en_old,y,y_NS,t,dt)
     implicit none
     integer :: neq, nvector, order
-    double precision, dimension(neq) :: dy, res, y, rhs, rhs_init, den, y_safe, err_weight
+    double precision, dimension(neq) :: dy, res, y, rhs_init, den, err_weight
     double precision, dimension(neq) :: en_old, en
-    double precision, dimension(neq,0:6) :: y_NS, y_NS_old
+    double precision, dimension(neq,0:6) :: y_NS
     double precision, dimension(neq,neq) :: L, U
     double precision, dimension(0:6,6) :: coeff
-    double precision :: theta, sigma, tol, error, absdy, dt, t, beta, rtol, atol, dt_scale, conv_rate
+    double precision :: theta, sigma, conv_error, error, dt, t, beta, rtol, atol, dt_scale, conv_rate
     logical :: converged,success,reset
-    integer :: i, j, conv_iterator, maxiter, k, lte_iterator
+    integer :: conv_iterator, maxiter, lte_iterator
     intent(inout) :: y_NS, y, dt, en_old, order, t
     intent(in) :: nvector, neq, coeff
 
@@ -100,6 +97,7 @@ contains
     conv_rate = 0.7d0
     lte_iterator = 0
     conv_iterator  = 0
+    conv_error = 0d0
 
     ! important quantity to measure density
     call CalcErrorWeight(neq,rtol,atol,y,err_weight)
@@ -116,7 +114,7 @@ contains
       ! 3. corrector ------------------------------------------------------------------------------!
       corrector: do while (.not. converged)
         ! calculates residuum
-        call CalcResiduum(nvector,neq,y,y_NS,en,rhs_init,order,dt,beta,res)
+        call CalcResiduum(nvector,neq,y,y_NS,en,dt,res)
 
         ! calculates the solution for dy with given residuum
         ! \todo this function needs to be enhanced for sparse matrices
@@ -129,7 +127,7 @@ contains
 
         ! convergence test:
         ! if fail reset and run again starting at predictor step with 0.25 times the step-size
-        call CheckConvergence(neq,order,conv_iterator,coeff,conv_rate,den,err_weight,converged,reset)
+        call CheckConvergence(neq,order,conv_iterator,coeff,conv_rate,den,conv_error,err_weight,converged,reset)
         if (reset) then
           dt_scale = 0.25
           call ResetSystem(neq,order,dt_scale,y_NS,dt)
@@ -145,19 +143,22 @@ contains
         dt_scale = 0.2
         call ResetSystem(neq,order,dt_scale,y_NS,dt)
         lte_iterator = lte_iterator + 1
+!        if (lte_iterator > 10) order = 1
         cycle predictor
       else
         success = .TRUE.
       end if
-
     end do predictor
 
     ! rewrite history array
     call UpdateNordsieck(neq, order, coeff, en, y_NS)
+!    print *, "UpdateNordsieck"
 
     ! write the result to the terminal or elsewhere
     t = t + dt
     print *, t, y
+!    print *, t
+!    print *, y
 
     ! 4. sanity checks & step-size/order control --------------------------------------------------!
     ! calculate step size for current, upper & lower order and use largest one
@@ -166,6 +167,7 @@ contains
 
     ! Adjust the Nordsieck history array with new step size & new order
     call SetStepSize(neq,order,dt_scale,y_NS,dt)
+!    print *, "SetStepSize"
     en_old = en
   end subroutine SolveLinearSystem
 
@@ -193,11 +195,11 @@ contains
   !> Calculates the step-sizes and uses according orders
   subroutine CalcStepSizeOrder(neq,order,coeff,err_weight,en,en_old,y_NS,dt_scale)
     implicit none
-    integer :: neq, order, i, dt_maxloc, maxorder
+    integer :: neq, order, dt_maxloc, maxorder
     double precision, dimension(0:6,6) :: coeff
     double precision, dimension(neq) :: en, err_weight, en_old
     double precision, dimension(neq,0:6) :: y_NS
-    double precision :: dt_scale, dt_scale_up, dt_scale_down, dt_upper_limit, dt_lower_limit
+    double precision :: dt_scale, dt_scale_up, dt_scale_down, dt_upper_limit
     intent(in) :: neq, coeff, err_weight, en
     intent(inout) :: order
     intent(out) :: dt_scale
@@ -215,8 +217,6 @@ contains
     ! maximum increasement in step-size
     dt_upper_limit = 10d0
     dt_scale = min(dt_upper_limit,dt_scale)
-!    dt_lower_limit = 0.2d0
-!    dt_scale = max(dt_lower_limit,dt_scale)
 
     ! set new order
     maxorder = 5
@@ -240,16 +240,16 @@ contains
 
 
   !> Calculates the error for convergence
-  subroutine CheckConvergence(neq,order,iterator,coeff,conv_rate,den,weight,converged,reset)
+  subroutine CheckConvergence(neq,order,iterator,coeff,conv_rate,den,error,weight,converged,reset)
     implicit none
     integer :: neq, order, iterator
     logical :: converged, reset
-    double precision :: conv_rate, border, error_tmp, error, init_val
-    double precision, dimension(neq) :: den, weight, y
+    double precision :: conv_rate, error_tmp, error
+    double precision, dimension(neq) :: den, weight
     double precision, dimension(0:6,6) :: coeff
     intent(in) :: neq, den, weight
     intent(out) :: converged
-    intent(inout) :: conv_rate
+    intent(inout) :: conv_rate, error
 
     error_tmp = WeightedNorm(neq,den,weight)
     conv_rate = max(0.2d0*conv_rate,error_tmp/error)
@@ -308,10 +308,8 @@ contains
     dtt_scale = 1.0
     do j = 1,order
       dtt_scale = dt_scale*dtt_scale
-!      print *, "dt_scale:", dt_scale, "dtt_scale:", dtt_scale
       y_NS(:,j) = y_NS(:,j)*dtt_scale
     end do
-!    print *, ""
 
     dt = dt*dt_scale
   end subroutine SetStepSize
@@ -323,7 +321,8 @@ contains
     double precision, dimension(neq) :: en
     double precision, dimension(neq,0:6) :: y_NS
     double precision, dimension(0:6,6) :: coeff
-    double precision :: h, one, et
+    intent(in) :: neq, order, coeff, en
+    intent(inout) :: y_NS
 
     do j = 0,order
       do i = 1,neq
@@ -342,7 +341,7 @@ contains
   !! \f]
   subroutine PredictSolution(neq,order,y_NS,en)
     implicit none
-    integer :: i,j,k,order,neq
+    integer :: j,k,order,neq
     double precision, dimension(neq,0:6) :: y_NS
     double precision, dimension(neq) :: en
     intent (in) :: neq,order
@@ -434,15 +433,13 @@ contains
   !!    r = y_n - \sum_{i=1}^{order} \alpha_i * y_{n-i} - h \beta_0 f(t_n, y_n).
   !! \f]
   !! For a converging system \f$ r \approx 0 \f$ should become true.
-  subroutine CalcResiduum(nvector,neq,y,y_NS,en,rhs_init,order,dt,beta,res)
+  subroutine CalcResiduum(nvector,neq,y,y_NS,en,dt,res)
     implicit none
-    integer :: neq,nvector,order
-    double precision, dimension(neq) :: y, rhs, a, res, en, rhs_init
+    integer :: neq,nvector
+    double precision, dimension(neq) :: y, rhs, res, en
     double precision, dimension(neq,0:6) :: y_NS
-    double precision :: dt, beta, t
-    integer :: i, j
-    double precision, dimension(0:6,6) :: coeff           !< coefficients of bdf-formula
-    intent (in) :: y, y_NS, nvector, neq, order, dt, beta, en
+    double precision :: dt, t
+    intent (in) :: y, y_NS, nvector, neq, dt, en
     intent (out) :: res
 
     call CalcRHS(neq,t,y,rhs)
@@ -453,7 +450,7 @@ contains
 
   !> Example case for the right-hand-side
   !!
-  !! \todo needs to be deneted later!
+  !! \todo needs to be done external later!
   !! This is Robertson's example
   subroutine CalcRHS(neq,t,y,rhs)
     implicit none
@@ -471,24 +468,23 @@ contains
 
 
   !>
-  subroutine CalcOrder(neq,coeff,iterator,order,y_NS)
-    implicit none
-    integer :: i
-    integer :: order, maxorder, iterator, neq
-    double precision, dimension(0:6,6) :: coeff
-    double precision, dimension(neq,0:6) :: y_NS
-    double precision, dimension(neq) :: en
-    intent(in) :: neq, coeff, iterator
-    intent(inout) :: order
-
-    maxorder = 5
-    if (order < maxorder) then
-      y_NS(:,order+1) = coeff(order,order)*en(:)/(order+1d0)
-      order = order + 1
-    else
-      order = maxorder
-    end if
-  end subroutine CalcOrder
+!  subroutine CalcOrder(neq,coeff,iterator,order,y_NS)
+!    implicit none
+!    integer :: order, maxorder, iterator, neq
+!    double precision, dimension(0:6,6) :: coeff
+!    double precision, dimension(neq,0:6) :: y_NS
+!    double precision, dimension(neq) :: en
+!    intent(in) :: neq, coeff, iterator
+!    intent(inout) :: order
+!
+!    maxorder = 5
+!    if (order < maxorder) then
+!      y_NS(:,order+1) = coeff(order,order)*en(:)/(order+1d0)
+!      order = order + 1
+!    else
+!      order = maxorder
+!    end if
+!  end subroutine CalcOrder
 
 
   !>
