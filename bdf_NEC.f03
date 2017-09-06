@@ -2,14 +2,15 @@ module bdf_method_mod
   implicit none
 contains
 
-  subroutine SolveODE_BDF(neq, nvector, y, t, t_stop, dt)
+  subroutine SolveODE_BDF(nvector,neq,y,t,t_stop,dt)
     implicit none
     integer :: neq,nvector, order, iterator
-    double precision, dimension(neq) :: y, en
-    double precision, dimension(neq,0:6) :: y_NS
+    double precision, dimension(nvector,neq) :: y, en
+    double precision, dimension(nvector,neq,0:6) :: y_NS
     double precision, dimension(0:6,6) :: coeff
     double precision :: t, t_stop, dt, start, finish
-    intent(inout) :: y
+    intent(in) :: nvector, neq, t_stop
+    intent(inout) :: y, t, dt
 
     ! bdf-matrix with Nordsieck representation
     coeff = reshape((/ double precision :: &
@@ -23,7 +24,7 @@ contains
 
     ! load initial condition into Nordsieck array
     order = 1
-    y_NS(:,0) = y
+    y_NS(:,:,0) = y
     en = 0.0
 
     ! initial conditions
@@ -64,10 +65,10 @@ contains
   subroutine SolveLinearSystem(nvector,neq,order,coeff,en_old,y,y_NS,t,dt)
     implicit none
     integer :: neq, nvector, order
-    double precision, dimension(neq) :: dy, res, y, rhs_init, den, err_weight
-    double precision, dimension(neq) :: en_old, en
-    double precision, dimension(neq,0:6) :: y_NS
-    double precision, dimension(neq,neq) :: L, U
+    double precision, dimension(nvector,neq) :: dy, res, y, rhs_init, den, err_weight
+    double precision, dimension(nvector,neq) :: en_old, en
+    double precision, dimension(nvector,neq,0:6) :: y_NS
+    double precision, dimension(nvector,neq,neq) :: L, U
     double precision, dimension(0:6,6) :: coeff
     double precision :: theta, sigma, conv_error, error, dt, t, beta, rtol, atol, dt_scale, conv_rate
     logical :: converged,success,reset
@@ -81,26 +82,26 @@ contains
     sigma = 0.01d0
     beta = 1.0d0
     theta = HUGE(1d0)
-    rtol = 1d-4
+    rtol = 1d-10
     atol = 1d-20
     maxiter = 3
 
     ! use the LU matrices from the predictor value
-    call GetLU(neq,y,t,beta,dt,L,U)
+    call GetLU(nvector,neq,y,t,beta,dt,L,U)
 
     ! Calculate initial right hand side
-    call CalcRHS(neq,t,y_NS(:,0),rhs_init)
-    y_NS(:,1) = dt*rhs_init
+    call CalcRHS(nvector,neq,t,y_NS(:,:,0),rhs_init)
+    y_NS(:,:,1) = dt*rhs_init
 
     ! some initializations
     den = 0.0d0
     conv_rate = 0.7d0
     lte_iterator = 0
     conv_iterator  = 0
-    conv_error = 0d0
+    conv_error = 1d20
 
     ! important quantity to measure density
-    call CalcErrorWeight(neq,rtol,atol,y,err_weight)
+    call CalcErrorWeight(nvector,neq,rtol,atol,y,err_weight)
 
     ! 2. predictor --------------------------------------------------------------------------------!
     success = .FALSE.
@@ -109,41 +110,40 @@ contains
       reset=.FALSE.
 
       ! predictor step - set predicted y_NS, en=0.0
-      call PredictSolution(neq,order,y_NS,en)
-      y = y_NS(:,0)
+      call PredictSolution(nvector,neq,order,y_NS,en)
+      y = y_NS(:,:,0)
       ! 3. corrector ------------------------------------------------------------------------------!
-      corrector: do while (.not. converged)
+      corrector: do while (conv_error > tau(order,order,coeff)/(2d0*(order+2d0)))
         ! calculates residuum
         call CalcResiduum(nvector,neq,y,y_NS,en,dt,res)
 
         ! calculates the solution for dy with given residuum
         ! \todo this function needs to be enhanced for sparse matrices
-        call SolveLU(neq,L,U,res,den)
+        call SolveLU(nvector,neq,L,U,res,den)
 
         ! add correction to solution vector
         en = en + den
         dy = coeff(0,order)*en
-        y = y_NS(:,0) + dy
+        y = y_NS(:,:,0) + dy
 
         ! convergence test:
         ! if fail reset and run again starting at predictor step with 0.25 times the step-size
-        call CheckConvergence(neq,order,conv_iterator,coeff,conv_rate,den,conv_error,err_weight,converged,reset)
+        call CheckConvergence(nvector,neq,order,conv_iterator,coeff,conv_rate,den,conv_error,err_weight,converged,reset)
+        conv_iterator = conv_iterator + 1
         if (reset) then
           dt_scale = 0.25
-          call ResetSystem(neq,order,dt_scale,y_NS,dt)
-          conv_iterator = conv_iterator + 1
+          call ResetSystem(nvector,neq,order,dt_scale,y_NS,dt)
           cycle predictor
         end if
       end do corrector
 
       ! local truncation error test:
       ! checks if solution is good enough and rewind everything if necessary
-      error = WeightedNorm(neq,en,err_weight)/tau(order,order,coeff)
+      error = WeightedNorm(nvector,neq,en,err_weight)/tau(order,order,coeff)
       if (error > 1d0) then
         dt_scale = 0.2
-        call ResetSystem(neq,order,dt_scale,y_NS,dt)
+        call ResetSystem(nvector,neq,order,dt_scale,y_NS,dt)
         lte_iterator = lte_iterator + 1
-!        if (lte_iterator > 10) order = 1
         cycle predictor
       else
         success = .TRUE.
@@ -151,64 +151,60 @@ contains
     end do predictor
 
     ! rewrite history array
-    call UpdateNordsieck(neq, order, coeff, en, y_NS)
-!    print *, "UpdateNordsieck"
+    call UpdateNordsieck(nvector,neq, order, coeff, en, y_NS)
 
     ! write the result to the terminal or elsewhere
     t = t + dt
     print *, t, y
-!    print *, t
-!    print *, y
 
     ! 4. sanity checks & step-size/order control --------------------------------------------------!
     ! calculate step size for current, upper & lower order and use largest one
     ! additionally it changes the order and enlarges the Nordsieck history array if necessary
-    call CalcStepSizeOrder(neq,order,coeff,err_weight,en,en_old,y_NS,dt_scale)
+    call CalcStepSizeOrder(nvector,neq,order,coeff,err_weight,en,en_old,y_NS,dt_scale)
 
     ! Adjust the Nordsieck history array with new step size & new order
-    call SetStepSize(neq,order,dt_scale,y_NS,dt)
-!    print *, "SetStepSize"
+    call SetStepSize(nvector,neq,order,dt_scale,y_NS,dt)
     en_old = en
   end subroutine SolveLinearSystem
 
 
   !>
-  subroutine ResetSystem(neq,order,dt_scale,y_NS,dt)
+  subroutine ResetSystem(nvector,neq,order,dt_scale,y_NS,dt)
     implicit none
-    integer :: neq, order, j, k
+    integer :: nvector,neq,order,j,k
     double precision :: dt_scale, dt
-    double precision, dimension(neq,0:6) :: y_NS
-    intent(in) :: neq, order, dt_scale
+    double precision, dimension(nvector,neq,0:6) :: y_NS
+    intent(in) :: nvector,neq, order, dt_scale
     intent(inout) :: y_NS, dt
 
     ! set the matrix back to old value
     do k = 0,order-1
       do j = order,k+1,-1
-        y_NS(:,j-1) = y_NS(:,j-1) - y_NS(:,j)
+        y_NS(:,:,j-1) = y_NS(:,:,j-1) - y_NS(:,:,j)
       end do
     end do
 
-    call SetStepSize(neq,order,dt_scale,y_NS,dt)
+    call SetStepSize(nvector,neq,order,dt_scale,y_NS,dt)
   end subroutine
 
 
   !> Calculates the step-sizes and uses according orders
-  subroutine CalcStepSizeOrder(neq,order,coeff,err_weight,en,en_old,y_NS,dt_scale)
+  subroutine CalcStepSizeOrder(nvector,neq,order,coeff,err_weight,en,en_old,y_NS,dt_scale)
     implicit none
-    integer :: neq, order, dt_maxloc, maxorder
+    integer :: nvector, neq, order, dt_maxloc, maxorder
     double precision, dimension(0:6,6) :: coeff
-    double precision, dimension(neq) :: en, err_weight, en_old
-    double precision, dimension(neq,0:6) :: y_NS
+    double precision, dimension(nvector,neq) :: en, err_weight, en_old
+    double precision, dimension(nvector,neq,0:6) :: y_NS
     double precision :: dt_scale, dt_scale_up, dt_scale_down, dt_upper_limit
-    intent(in) :: neq, coeff, err_weight, en
+    intent(in) :: nvector, neq, coeff, err_weight, en
     intent(inout) :: order
     intent(out) :: dt_scale
 
     ! calculate all estimated step sizes
     ! \todo check if order is correct here
-    dt_scale_down = 1.d0/(1.3*(WeightedNorm(neq,y_NS(:,order),err_weight)/tau(order,order-1,coeff))**(1d0/order) + 1d-6)
-    dt_scale = 1.d0/(1.2*(WeightedNorm(neq,en,err_weight)/tau(order,order,coeff))**(1d0/(order+1d0)) + 1d-6)
-    dt_scale_up = 1.d0/(1.4*(WeightedNorm(neq,en-en_old,err_weight)/tau(order,order+1,coeff))**(1d0/(order+2d0)) + 1d-6)
+    dt_scale_down = 1.d0/(1.3*(WeightedNorm(nvector,neq,y_NS(:,:,order),err_weight)/tau(order,order-1,coeff))**(1d0/order) + 1d-6)
+    dt_scale = 1.d0/(1.2*(WeightedNorm(nvector,neq,en,err_weight)/tau(order,order,coeff))**(1d0/(order+1d0)) + 1d-6)
+    dt_scale_up = 1.d0/(1.4*(WeightedNorm(nvector,neq,en-en_old,err_weight)/tau(order,order+1,coeff))**(1d0/(order+2d0)) + 1d-6)
 
     ! choose largest and search for location of largest
     dt_maxloc = maxloc((/ dt_scale_down, dt_scale, dt_scale_up /),DIM=1)
@@ -230,7 +226,7 @@ contains
       ! do nothing
     else if (dt_maxloc == 3) then ! enlarge Nordsieck array by 1
       if (order /= maxorder) then
-        y_NS(:,order+1) = coeff(order,order)*en(:)/(order+1d0)
+        y_NS(:,:,order+1) = coeff(order,order)*en(:,:)/(order+1d0)
         order = order + 1
       else
         ! do nothing
@@ -240,18 +236,18 @@ contains
 
 
   !> Calculates the error for convergence
-  subroutine CheckConvergence(neq,order,iterator,coeff,conv_rate,den,error,weight,converged,reset)
+  subroutine CheckConvergence(nvector,neq,order,iterator,coeff,conv_rate,den,error,weight,converged,reset)
     implicit none
-    integer :: neq, order, iterator
+    integer :: nvector, neq, order, iterator
     logical :: converged, reset
     double precision :: conv_rate, error_tmp, error
-    double precision, dimension(neq) :: den, weight
+    double precision, dimension(nvector,neq) :: den, weight
     double precision, dimension(0:6,6) :: coeff
-    intent(in) :: neq, den, weight
+    intent(in) :: neq, den, weight, iterator, order,coeff
     intent(out) :: converged
-    intent(inout) :: conv_rate, error
+    intent(inout) :: conv_rate, error, reset
 
-    error_tmp = WeightedNorm(neq,den,weight)
+    error_tmp = WeightedNorm(nvector,neq,den,weight)
     conv_rate = max(0.2d0*conv_rate,error_tmp/error)
     error = error_tmp*min(1d0,1.5d0*conv_rate)
 
@@ -261,34 +257,39 @@ contains
       reset = .TRUE.
     else if (iterator > 3) then
       reset = .TRUE.
-    else if (error <= tau(order,order,coeff)/(2d0*(order+2d0))) then
-      converged = .TRUE.
+    else
+      reset = .FALSE.
     end if
   end subroutine CheckConvergence
 
 
   !> Weighted Norm
-  function WeightedNorm(neq,en,weight)
+  function WeightedNorm(nvector,neq,en,weight)
     implicit none
-    integer :: neq
-    double precision, dimension(neq) :: en, weight
+    integer :: nvector,neq,i,j
+    double precision, dimension(nvector,neq) :: en, weight
     double precision :: WeightedNorm
     intent(in) :: en, weight
 
-    WeightedNorm = sqrt(sum(en*en*weight*weight)/neq)
+    WeightedNorm = sqrt(sum(en*en*weight*weight)/(neq*nvector))
   end function WeightedNorm
 
 
   !>
-  subroutine CalcErrorWeight(neq,rtol,atol,y,err_weight)
+  subroutine CalcErrorWeight(nvector,neq,rtol,atol,y,err_weight)
     implicit none
-    integer :: neq
-    double precision, dimension(neq) :: y,err_weight
+    integer :: neq, nvector, i, j
+    double precision, dimension(nvector,neq) :: y,err_weight
     double precision :: rtol, atol
     intent(in) :: neq, rtol, atol, y
     intent(out) :: err_weight
 
-    err_weight = 1./(rtol*abs(y) + atol)
+    ! \todo this has to be different most probably for y
+    do j=1,neq
+      do i=1,nvector
+        err_weight(i,j) = 1./(rtol*abs(y(i,j)) + atol)
+      end do
+    end do
   end subroutine CalcErrorWeight
 
 
@@ -297,18 +298,18 @@ contains
   !! When the step-size is changed also the corresponding history array needs to be adjusted. Since
   !! we are using the Nordsieck representation this is easily done by multiplying the track
   !! \f$r,rr,rrr,...\f$ to the Nordsieck array.
-  subroutine SetStepSize(neq,order,dt_scale,y_NS,dt)
+  subroutine SetStepSize(nvector,neq,order,dt_scale,y_NS,dt)
     implicit none
-    integer :: neq,order,j
+    integer :: nvector,neq,order,j
     double precision :: dt_scale,dtt_scale,dt
-    double precision, dimension(neq,0:6) :: y_NS
+    double precision, dimension(nvector,neq,0:6) :: y_NS
     intent(inout) :: y_NS,dt
     intent(in) :: order,dt_scale,neq
 
     dtt_scale = 1.0
     do j = 1,order
       dtt_scale = dt_scale*dtt_scale
-      y_NS(:,j) = y_NS(:,j)*dtt_scale
+      y_NS(:,:,j) = y_NS(:,:,j)*dtt_scale
     end do
 
     dt = dt*dt_scale
@@ -316,17 +317,17 @@ contains
 
 
   !>
-  subroutine UpdateNordsieck(neq, order, coeff, en, y_NS)
-    integer :: neq,i,j, order
-    double precision, dimension(neq) :: en
-    double precision, dimension(neq,0:6) :: y_NS
+  subroutine UpdateNordsieck(nvector,neq, order, coeff, en, y_NS)
+    integer :: nvector,neq,i,j, order
+    double precision, dimension(nvector,neq) :: en
+    double precision, dimension(nvector,neq,0:6) :: y_NS
     double precision, dimension(0:6,6) :: coeff
-    intent(in) :: neq, order, coeff, en
+    intent(in) :: nvector,neq, order, coeff, en
     intent(inout) :: y_NS
 
     do j = 0,order
       do i = 1,neq
-        y_NS(i,j) = y_NS(i,j) + en(i)*coeff(j,order)
+        y_NS(:,i,j) = y_NS(:,i,j) + en(:,i)*coeff(j,order)
       end do
     end do
   end subroutine UpdateNordsieck
@@ -339,19 +340,19 @@ contains
   !!    \mathbf{z}_n^{[0]} &= \mathbf{z}_{n-1} \mathbf{A} \\
   !!    e_n^{0} &= 0.
   !! \f]
-  subroutine PredictSolution(neq,order,y_NS,en)
+  subroutine PredictSolution(nvector,neq,order,y_NS,en)
     implicit none
-    integer :: j,k,order,neq
-    double precision, dimension(neq,0:6) :: y_NS
-    double precision, dimension(neq) :: en
-    intent (in) :: neq,order
+    integer :: j,k,order,neq,nvector
+    double precision, dimension(nvector,neq,0:6) :: y_NS
+    double precision, dimension(nvector,neq) :: en
+    intent (in) :: neq,order,nvector
     intent (inout) :: y_NS
     intent (out) :: en
 
     ! this loop effectively solves the Pascal Triangle without multiplications
     do k = 0,order-1
       do j = order,k+1,-1
-        y_NS(:,j-1) = y_NS(:,j) + y_NS(:,j-1)
+        y_NS(:,:,j-1) = y_NS(:,:,j) + y_NS(:,:,j-1)
       end do
     end do
 
@@ -363,34 +364,38 @@ contains
   !> Solve the System \f$ LUx=r \f$
   !!
   !! \todo this is until now for dense systems. it should be changed to sparse matrices
-  subroutine SolveLU(neq,L,U,res,dy)
+  subroutine SolveLU(nvector,neq,L,U,res,dy)
     implicit none
-    integer :: neq
-    double precision, dimension(neq,neq) :: L, U
-    double precision, dimension(neq) :: dy, res
-    double precision, dimension(neq) :: y
+    integer :: neq,nvector
+    double precision, dimension(nvector,neq,neq) :: L, U
+    double precision, dimension(nvector,neq) :: dy, res
+    double precision, dimension(nvector,neq) :: y
     intent(in) :: res, L, U, neq
     intent(out) :: dy
-    integer :: j,k
+    integer :: i,j,k
 
     y = 0.0
     ! lower system
     do k = 1,neq,1
       do j = 1,k-1
-        y(k) = y(k) + L(k,j)*y(j)
+        do i = 1,nvector
+          y(i,k) = y(i,k) + L(i,k,j)*y(i,j)
+        end do
       end do
-      y(k) = res(k) - y(k)
-      y(k) = y(k)/L(k,k)
+      y(:,k) = res(:,k) - y(:,k)
+      y(:,k) = y(:,k)/L(:,k,k)
     end do
 
     ! upper system
     dy = 0.0
     do k = neq,1,-1
       do j = k+1,neq
-        dy(k) = dy(k) + U(k,j)*dy(j)
+        do i = 1,nvector
+          dy(i,k) = dy(i,k) + U(i,k,j)*dy(i,j)
+        end do
       end do
-      dy(k) = y(k) - dy(k)
-      dy(k) = dy(k)/U(k,k)
+      dy(:,k) = y(:,k) - dy(:,k)
+      dy(:,k) = dy(:,k)/U(:,k,k)
     end do
   end subroutine SolveLU
 
@@ -398,30 +403,33 @@ contains
   !> Get the Matrices L and U either from A or given
   !!
   !! \todo The Python preprocessor needs to include here the code
-  subroutine GetLU(neq,y,t,beta,dt,L,U)
+  subroutine GetLU(nvector,neq,y,t,beta,dt,L,U)
     implicit none
-    integer :: neq
+    integer :: nvector,neq, i
     double precision :: t, beta, dt
-    double precision, dimension(neq) :: y
-    double precision, dimension(neq,neq) :: L,U
+    double precision, dimension(nvector,neq) :: y
+    double precision, dimension(nvector,neq,neq) :: L,U
     intent (in) :: neq, y, t, beta, dt
     intent (out) :: L, U
 
-    L = transpose(reshape( &
-      (/ double precision :: 1.0, 0.0, 0.0, &
-       0.4*beta*dt/(0.04*beta*dt+1.), 1.0, 0.0 , &
-       0.0, -60000000.0*beta*dt*y(2)/(-400.0*beta**2*dt**2*y(3)/(0.04*beta*dt + 1) &
-       - beta*dt*(-60000000.0*y(2) - 10000.0*y(3)) + 1), 1.0 /), &
-       (/3,3/)))
+    !> \todo this is most probably not performant yet. Find a better solution
+    do i=1,nvector
+      L(i,:,:) = transpose(reshape( &
+        (/ double precision :: 1.0, 0.0, 0.0, &
+         0.4*beta*dt/(0.04*beta*dt+1.), 1.0, 0.0 , &
+         0.0, -60000000.0*beta*dt*y(i,2)/(-400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) &
+         - beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1), 1.0 /), &
+         (/3,3/)))
 
-    U = transpose(reshape( &
-      (/ double precision :: 0.04*beta*dt + 1, -10000.0*beta*dt*y(3), -10000.0*beta*dt*y(2) , & ! end row 1
-       0, -400.0*beta**2*dt**2*y(3)/(0.04*beta*dt + 1) - beta*dt*(-60000000.0*y(2) - 10000.0*y(3)) + 1, &
-       -400.0*beta**2*dt**2*y(2)/(0.04*beta*dt + 1) + 10000.0*beta*dt*y(2), &! end row 2
-       0, 0, 60000000.0*beta*dt*y(2)*(-400.0*beta**2*dt**2*y(2)/(0.04*beta*dt + 1) &
-        + 10000.0*beta*dt*y(2))/(-400.0*beta**2*dt**2*y(3)/(0.04*beta*dt + 1) -  &
-        beta*dt*(-60000000.0*y(2) - 10000.0*y(3)) + 1) + 1 /), & ! end row 3
-       (/3,3/)))
+      U(i,:,:) = transpose(reshape( &
+        (/ double precision :: 0.04*beta*dt + 1, -10000.0*beta*dt*y(i,3), -10000.0*beta*dt*y(i,2) , & ! end row 1
+         0, -400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) - beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1, &
+         -400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) + 10000.0*beta*dt*y(i,2), &! end row 2
+         0, 0, 60000000.0*beta*dt*y(i,2)*(-400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) &
+          + 10000.0*beta*dt*y(i,2))/(-400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) -  &
+          beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1) + 1 /), & ! end row 3
+         (/3,3/)))
+    end do
 
   end subroutine GetLU
 
@@ -436,15 +444,15 @@ contains
   subroutine CalcResiduum(nvector,neq,y,y_NS,en,dt,res)
     implicit none
     integer :: neq,nvector
-    double precision, dimension(neq) :: y, rhs, res, en
-    double precision, dimension(neq,0:6) :: y_NS
+    double precision, dimension(nvector,neq) :: y, rhs, res, en
+    double precision, dimension(nvector,neq,0:6) :: y_NS
     double precision :: dt, t
     intent (in) :: y, y_NS, nvector, neq, dt, en
     intent (out) :: res
 
-    call CalcRHS(neq,t,y,rhs)
+    call CalcRHS(nvector,neq,t,y,rhs)
 
-    res = dt*rhs - y_NS(:,1) - en
+    res = dt*rhs - y_NS(:,:,1) - en
   end subroutine CalcResiduum
 
 
@@ -452,18 +460,18 @@ contains
   !!
   !! \todo needs to be done external later!
   !! This is Robertson's example
-  subroutine CalcRHS(neq,t,y,rhs)
+  subroutine CalcRHS(nvector,neq,t,y,rhs)
     implicit none
-    integer :: neq
-    double precision, dimension(neq) :: y
-    double precision, dimension(neq) :: rhs
+    integer :: neq, nvector
+    double precision, dimension(nvector,neq) :: y
+    double precision, dimension(nvector,neq) :: rhs
     double precision :: t
-    intent (in) :: y, neq, t
+    intent (in) :: y, neq, t, nvector
     intent (out) :: rhs
 
-    rhs(1) = -0.04*y(1) + 1d4*y(2)*y(3)
-    rhs(2) = 0.04*y(1) - 3d7*y(2)*y(2) - 1d4*y(2)*y(3)
-    rhs(3) = 3d7*y(2)*y(2)
+    rhs(:,1) = -0.04*y(:,1) + 1d4*y(:,2)*y(:,3)
+    rhs(:,2) = 0.04*y(:,1) - 3d7*y(:,2)*y(:,2) - 1d4*y(:,2)*y(:,3)
+    rhs(:,3) = 3d7*y(:,2)*y(:,2)
   end subroutine CalcRHS
 
 
