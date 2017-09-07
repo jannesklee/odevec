@@ -1,5 +1,6 @@
 module bdf_method_mod
   implicit none
+
 contains
 
   subroutine SolveODE_BDF(nvector,neq,y,t,t_stop,dt)
@@ -13,23 +14,23 @@ contains
     intent(inout) :: y, t, dt
 
     ! bdf-matrix with Nordsieck representation
-    coeff = reshape((/ double precision :: &
-          1.       , 1. , 0.        , 0.       , 0.        , 0.      , 0.         , &
-          2./3.    , 1. , 1./3.     , 0.       , 0.        , 0.      , 0.         , &
-          6./11.   , 1. , 6./11.    , 1./11.   , 0.        , 0.      , 0.         , &
-          12./25.  , 1. , 7./10.    , 1./5.    , 1./50.    , 0.      , 0.         , &
-          60./137. , 1. , 225./274. , 85./274. , 15./274.  , 1./274. , 0.         , &
-          20./49.  , 1. , 58./63.   , 5./12.   , 25./252.  , 1./84.  , 1./1764. /), &
+    coeff = reshape((/  &
+          1d0        , 1d0 , 0d0         , 0d0        , 0d0         , 0d0       , 0d0         , &
+          2d0/3d0    , 1d0 , 1d0/3d0     , 0d0        , 0d0         , 0d0       , 0d0         , &
+          6d0/11d0   , 1d0 , 6d0/11d0    , 1d0/11d0   , 0d0         , 0d0       , 0d0         , &
+          12d0/25d0  , 1d0 , 7d0/10d0    , 1d0/5d0    , 1d0/50d0    , 0d0       , 0d0         , &
+          60d0/137d0 , 1d0 , 225d0/274d0 , 85d0/274d0 , 15d0/274d0  , 1d0/274d0 , 0d0         , &
+          20d0/49d0  , 1d0 , 58d0/63d0   , 5d0/12d0   , 25d0/252d0  , 1d0/84d0  , 1d0/1764d0 /), &
           (/7, 6/))
 
     ! load initial condition into Nordsieck array
     order = 1
-    y_NS(:,:,0) = y
+    y_NS(:,:,0) = y(:,:)
     en = 0.0
 
     ! initial conditions
     iterator = 0
-    print *, t, y
+    print *, t, y(100,:)
 
     call cpu_time(start)
 
@@ -72,7 +73,7 @@ contains
     double precision, dimension(0:6,6) :: coeff
     double precision :: theta, sigma, conv_error, error, dt, t, beta, rtol, atol, dt_scale, conv_rate
     logical :: converged,success,reset
-    integer :: conv_iterator, maxiter, lte_iterator
+    integer :: conv_iterator, lte_iterator
     intent(inout) :: y_NS, y, dt, en_old, order, t
     intent(in) :: nvector, neq, coeff
 
@@ -84,14 +85,13 @@ contains
     theta = HUGE(1d0)
     rtol = 1d-10
     atol = 1d-20
-    maxiter = 3
 
     ! use the LU matrices from the predictor value
     call GetLU(nvector,neq,y,t,beta,dt,L,U)
 
     ! Calculate initial right hand side
     call CalcRHS(nvector,neq,t,y_NS(:,:,0),rhs_init)
-    y_NS(:,:,1) = dt*rhs_init
+    y_NS(:,:,1) = dt*rhs_init(:,:)
 
     ! some initializations
     den = 0.0d0
@@ -111,7 +111,7 @@ contains
 
       ! predictor step - set predicted y_NS, en=0.0
       call PredictSolution(nvector,neq,order,y_NS,en)
-      y = y_NS(:,:,0)
+      y(:,:) = y_NS(:,:,0)
       ! 3. corrector ------------------------------------------------------------------------------!
       corrector: do while (conv_error > tau(order,order,coeff)/(2d0*(order+2d0)))
         ! calculates residuum
@@ -153,9 +153,9 @@ contains
     ! rewrite history array
     call UpdateNordsieck(nvector,neq, order, coeff, en, y_NS)
 
-    ! write the result to the terminal or elsewhere
+   ! write the result to the terminal or elsewhere
     t = t + dt
-    print *, t, y
+    print *, t, y(100,:)
 
     ! 4. sanity checks & step-size/order control --------------------------------------------------!
     ! calculate step size for current, upper & lower order and use largest one
@@ -171,7 +171,7 @@ contains
   !>
   subroutine ResetSystem(nvector,neq,order,dt_scale,y_NS,dt)
     implicit none
-    integer :: nvector,neq,order,j,k
+    integer :: nvector,neq,order,j,k,i,l
     double precision :: dt_scale, dt
     double precision, dimension(nvector,neq,0:6) :: y_NS
     intent(in) :: nvector,neq, order, dt_scale
@@ -180,7 +180,11 @@ contains
     ! set the matrix back to old value
     do k = 0,order-1
       do j = order,k+1,-1
-        y_NS(:,:,j-1) = y_NS(:,:,j-1) - y_NS(:,:,j)
+        do l = 1,neq
+          do i = 1,nvector
+            y_NS(i,l,j-1) = y_NS(i,l,j-1) - y_NS(i,l,j)
+          end do
+        end do
       end do
     end do
 
@@ -266,7 +270,7 @@ contains
   !> Weighted Norm
   function WeightedNorm(nvector,neq,en,weight)
     implicit none
-    integer :: nvector,neq,i,j
+    integer :: nvector,neq
     double precision, dimension(nvector,neq) :: en, weight
     double precision :: WeightedNorm
     intent(in) :: en, weight
@@ -300,16 +304,20 @@ contains
   !! \f$r,rr,rrr,...\f$ to the Nordsieck array.
   subroutine SetStepSize(nvector,neq,order,dt_scale,y_NS,dt)
     implicit none
-    integer :: nvector,neq,order,j
+    integer :: nvector,neq,order,i,j,k
     double precision :: dt_scale,dtt_scale,dt
     double precision, dimension(nvector,neq,0:6) :: y_NS
     intent(inout) :: y_NS,dt
     intent(in) :: order,dt_scale,neq
 
     dtt_scale = 1.0
-    do j = 1,order
+    do k = 1,order
       dtt_scale = dt_scale*dtt_scale
-      y_NS(:,:,j) = y_NS(:,:,j)*dtt_scale
+      do j = 1,neq
+        do i = 1,nvector
+          y_NS(i,j,k) = y_NS(i,j,k)*dtt_scale
+        end do
+      end do
     end do
 
     dt = dt*dt_scale
@@ -318,16 +326,18 @@ contains
 
   !>
   subroutine UpdateNordsieck(nvector,neq, order, coeff, en, y_NS)
-    integer :: nvector,neq,i,j, order
+    integer :: nvector,neq,i,j,k,order
     double precision, dimension(nvector,neq) :: en
     double precision, dimension(nvector,neq,0:6) :: y_NS
     double precision, dimension(0:6,6) :: coeff
     intent(in) :: nvector,neq, order, coeff, en
     intent(inout) :: y_NS
 
-    do j = 0,order
-      do i = 1,neq
-        y_NS(:,i,j) = y_NS(:,i,j) + en(:,i)*coeff(j,order)
+    do k = 0,order
+      do j = 1,neq
+        do i = 1,nvector
+          y_NS(i,j,k) = y_NS(i,j,k) + en(i,j)*coeff(k,order)
+        end do
       end do
     end do
   end subroutine UpdateNordsieck
@@ -342,7 +352,7 @@ contains
   !! \f]
   subroutine PredictSolution(nvector,neq,order,y_NS,en)
     implicit none
-    integer :: j,k,order,neq,nvector
+    integer :: i,j,k,l,order,neq,nvector
     double precision, dimension(nvector,neq,0:6) :: y_NS
     double precision, dimension(nvector,neq) :: en
     intent (in) :: neq,order,nvector
@@ -350,9 +360,13 @@ contains
     intent (out) :: en
 
     ! this loop effectively solves the Pascal Triangle without multiplications
-    do k = 0,order-1
-      do j = order,k+1,-1
-        y_NS(:,:,j-1) = y_NS(:,:,j) + y_NS(:,:,j-1)
+    do l = 0,order-1
+      do k = order,l+1,-1
+        do j = 1,neq
+          do i = 1,nvector
+            y_NS(i,j,k-1) = y_NS(i,j,k) + y_NS(i,j,k-1)
+          end do
+        end do
       end do
     end do
 
@@ -408,27 +422,31 @@ contains
     integer :: nvector,neq, i
     double precision :: t, beta, dt
     double precision, dimension(nvector,neq) :: y
+!    double precision, dimension(3,3) :: L_tmp,U_tmp
     double precision, dimension(nvector,neq,neq) :: L,U
     intent (in) :: neq, y, t, beta, dt
     intent (out) :: L, U
 
     !> \todo this is most probably not performant yet. Find a better solution
     do i=1,nvector
-      L(i,:,:) = transpose(reshape( &
-        (/ double precision :: 1.0, 0.0, 0.0, &
-         0.4*beta*dt/(0.04*beta*dt+1.), 1.0, 0.0 , &
-         0.0, -60000000.0*beta*dt*y(i,2)/(-400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) &
-         - beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1), 1.0 /), &
+      L(i,1:3,1:3) = transpose(reshape( &
+        (/ 1.0d0, 0.0d0, 0.0d0, &
+         0.4d0*beta*dt/(0.04d0*beta*dt+1d0), 1.0d0, 0.0d0 , &
+         0.0d0, -60000000.0d0*beta*dt*y(i,2)/(-400.0d0*beta*beta*dt*dt*y(i,3)/(0.04d0*beta*dt + 1d0) &
+         - beta*dt*(-60000000.0d0*y(i,2) - 10000.0d0*y(i,3)) + 1d0), 1.0d0 /), &
          (/3,3/)))
 
-      U(i,:,:) = transpose(reshape( &
-        (/ double precision :: 0.04*beta*dt + 1, -10000.0*beta*dt*y(i,3), -10000.0*beta*dt*y(i,2) , & ! end row 1
-         0, -400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) - beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1, &
+      U(i,1:3,1:3) = transpose(reshape( &
+        (/ 0.04d0*beta*dt + i, -10000.0*beta*dt*y(i,3), -10000.0*beta*dt*y(i,2) , & ! end row 1
+         0d0, -400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) - beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + i, &
          -400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) + 10000.0*beta*dt*y(i,2), &! end row 2
-         0, 0, 60000000.0*beta*dt*y(i,2)*(-400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) &
+         0d0, 0d0, 60000000.0*beta*dt*y(i,2)*(-400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) &
           + 10000.0*beta*dt*y(i,2))/(-400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) -  &
           beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1) + 1 /), & ! end row 3
          (/3,3/)))
+
+!      L(i,:,:) = L_tmp(:,:)
+!      U(i,:,:) = U_tmp(:,:)
     end do
 
   end subroutine GetLU
@@ -443,7 +461,7 @@ contains
   !! For a converging system \f$ r \approx 0 \f$ should become true.
   subroutine CalcResiduum(nvector,neq,y,y_NS,en,dt,res)
     implicit none
-    integer :: neq,nvector
+    integer :: i,j,neq,nvector
     double precision, dimension(nvector,neq) :: y, rhs, res, en
     double precision, dimension(nvector,neq,0:6) :: y_NS
     double precision :: dt, t
@@ -452,7 +470,11 @@ contains
 
     call CalcRHS(nvector,neq,t,y,rhs)
 
-    res = dt*rhs - y_NS(:,:,1) - en
+    do j=1,neq
+      do i=1,nvector
+        res(i,j) = dt*rhs(i,j) - y_NS(i,j,1) - en(i,j)
+      end do
+    end do
   end subroutine CalcResiduum
 
 
@@ -462,16 +484,18 @@ contains
   !! This is Robertson's example
   subroutine CalcRHS(nvector,neq,t,y,rhs)
     implicit none
-    integer :: neq, nvector
+    integer :: i, neq, nvector
     double precision, dimension(nvector,neq) :: y
     double precision, dimension(nvector,neq) :: rhs
     double precision :: t
     intent (in) :: y, neq, t, nvector
     intent (out) :: rhs
 
-    rhs(:,1) = -0.04*y(:,1) + 1d4*y(:,2)*y(:,3)
-    rhs(:,2) = 0.04*y(:,1) - 3d7*y(:,2)*y(:,2) - 1d4*y(:,2)*y(:,3)
-    rhs(:,3) = 3d7*y(:,2)*y(:,2)
+    do i=1,nvector
+      rhs(i,1) = -0.04d0*y(i,1) + 1d4*y(i,2)*y(i,3)
+      rhs(i,2) = 0.04d0*y(i,1) - 3d7*y(i,2)*y(i,2) - 1d4*y(i,2)*y(i,3)
+      rhs(i,3) = 3d7*y(i,2)*y(i,2)
+    end do
   end subroutine CalcRHS
 
 
