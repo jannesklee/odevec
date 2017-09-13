@@ -3,15 +3,18 @@ module bdf_method_mod
 
 contains
 
-  subroutine SolveODE_BDF(nvector,neq,y,t,t_stop,dt)
+  subroutine SolveODE_BDF(nvector,neq,y,t,t_stop,dt,rtol,atol)
     implicit none
     integer :: neq,nvector, order, iterator
     double precision, dimension(nvector,neq) :: y, en
     double precision, dimension(nvector,neq,0:6) :: y_NS
     double precision, dimension(0:6,6) :: coeff
-    double precision :: t, t_stop, dt, start, finish
-    intent(in) :: nvector, neq, t_stop
+    double precision :: t, t_stop, dt, start, finish,atol,rtol
+    intent(in) :: nvector, neq, t_stop, rtol, atol
     intent(inout) :: y, t, dt
+
+
+
 
     ! bdf-matrix with Nordsieck representation
     coeff = reshape((/  &
@@ -23,6 +26,7 @@ contains
           20d0/49d0  , 1d0 , 58d0/63d0   , 5d0/12d0   , 25d0/252d0  , 1d0/84d0  , 1d0/1764d0 /), &
           (/7, 6/))
 
+
     ! load initial condition into Nordsieck array
     order = 1
     y_NS(:,:,0) = y(:,:)
@@ -30,22 +34,21 @@ contains
 
     ! initial conditions
     iterator = 0
-    print *, t, y(100,:)
+    print *, t, y(1,:)
 
-    call cpu_time(start)
+!    call cpu_time(start)
 
     ! main solve - solve the linear system
     do while (t <= t_stop)
-
       ! solve the system
-      call SolveLinearSystem(nvector,neq,order,coeff,en,y,y_NS,t,dt)
+      call SolveLinearSystem(nvector,neq,order,atol,rtol,coeff,en,y,y_NS,t,dt)
 
       iterator = iterator + 1
     end do
 
-    call cpu_time(finish)
-    print '("")'
-    print '("Time = ", f10.8, " seconds.")', finish-start
+!    call cpu_time(finish)
+!    print '("")'
+!    print '("Time = ", f6.3, " seconds.")', finish-start
   end subroutine
 
 
@@ -63,7 +66,7 @@ contains
   !!    - checking for sanity
   !!    - checking step-size & order
   !!      - change appropriately
-  subroutine SolveLinearSystem(nvector,neq,order,coeff,en_old,y,y_NS,t,dt)
+  subroutine SolveLinearSystem(nvector,neq,order,atol,rtol,coeff,en_old,y,y_NS,t,dt)
     implicit none
     integer :: neq, nvector, order
     double precision, dimension(nvector,neq) :: dy, res, y, rhs_init, den, err_weight
@@ -75,7 +78,7 @@ contains
     logical :: converged,success,reset
     integer :: conv_iterator, lte_iterator
     intent(inout) :: y_NS, y, dt, en_old, order, t
-    intent(in) :: nvector, neq, coeff
+    intent(in) :: nvector, neq, coeff,atol,rtol
 
 
     ! 1. initialization ---------------------------------------------------------------------------!
@@ -83,8 +86,6 @@ contains
     sigma = 0.01d0
     beta = 1.0d0
     theta = HUGE(1d0)
-    rtol = 1d-10
-    atol = 1d-20
 
     ! use the LU matrices from the predictor value
     call GetLU(nvector,neq,y,t,beta,dt,L,U)
@@ -155,7 +156,7 @@ contains
 
    ! write the result to the terminal or elsewhere
     t = t + dt
-    print *, t, y(100,:)
+    print *, t, y(1,:)
 
     ! 4. sanity checks & step-size/order control --------------------------------------------------!
     ! calculate step size for current, upper & lower order and use largest one
@@ -422,32 +423,51 @@ contains
     integer :: nvector,neq, i
     double precision :: t, beta, dt
     double precision, dimension(nvector,neq) :: y
-!    double precision, dimension(3,3) :: L_tmp,U_tmp
     double precision, dimension(nvector,neq,neq) :: L,U
     intent (in) :: neq, y, t, beta, dt
     intent (out) :: L, U
 
     !> \todo this is most probably not performant yet. Find a better solution
     do i=1,nvector
-      L(i,1:3,1:3) = transpose(reshape( &
-        (/ 1.0d0, 0.0d0, 0.0d0, &
-         0.4d0*beta*dt/(0.04d0*beta*dt+1d0), 1.0d0, 0.0d0 , &
-         0.0d0, -60000000.0d0*beta*dt*y(i,2)/(-400.0d0*beta*beta*dt*dt*y(i,3)/(0.04d0*beta*dt + 1d0) &
-         - beta*dt*(-60000000.0d0*y(i,2) - 10000.0d0*y(i,3)) + 1d0), 1.0d0 /), &
-         (/3,3/)))
-
-      U(i,1:3,1:3) = transpose(reshape( &
-        (/ 0.04d0*beta*dt + i, -10000.0*beta*dt*y(i,3), -10000.0*beta*dt*y(i,2) , & ! end row 1
-         0d0, -400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) - beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + i, &
-         -400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) + 10000.0*beta*dt*y(i,2), &! end row 2
-         0d0, 0d0, 60000000.0*beta*dt*y(i,2)*(-400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) &
-          + 10000.0*beta*dt*y(i,2))/(-400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) -  &
-          beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1) + 1 /), & ! end row 3
-         (/3,3/)))
-
-!      L(i,:,:) = L_tmp(:,:)
-!      U(i,:,:) = U_tmp(:,:)
+      L(i,1,1) = 1d0
+      L(i,1,2) = 0d0
+      L(i,1,3) = 0d0
+      L(i,2,1) = 0.4d0*beta*dt/(0.04d0*beta*dt+1d0)
+      L(i,2,2) = 1d0
+      L(i,2,3) = 0d0
+      L(i,3,1) = 0d0
+      L(i,3,2) = - 60000000.0d0*beta*dt*y(i,2)/(-400.0d0*beta*beta*dt*dt*y(i,3)/ &
+                  (0.04d0*beta*dt + 1d0) - beta*dt*(-60000000.0d0*y(i,2) - 10000.0d0*y(i,3)) + 1d0)
+      L(i,3,3) = 1d0
+      U(i,1,1) = 0.04d0*beta*dt + 1d0
+      U(i,1,2) = -10000.0*beta*dt*y(i,3)
+      U(i,1,3) = -10000.0*beta*dt*y(i,2)
+      U(i,2,1) = 0d0
+      U(i,2,2) = -400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) - beta*dt* &
+                 (-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1d0
+      U(i,2,3) = -400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) + 10000.0*beta*dt*y(i,2)
+      U(i,3,1) = 0d0
+      U(i,3,2) = 0d0
+      U(i,3,3) = 60000000.0*beta*dt*y(i,2)*(-400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1d0) &
+                + 10000.0*beta*dt*y(i,2))/(-400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1d0) &
+                - beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1d0) + 1d0
     end do
+
+!      L(i,:,:) = transpose(reshape( &
+!        (/ 1.0d0, 0.0d0, 0.0d0, &
+!         0.4d0*beta*dt/(0.04d0*beta*dt+1d0), 1.0d0, 0.0d0 , &
+!         0.0d0, -60000000.0d0*beta*dt*y(i,2)/(-400.0d0*beta*beta*dt*dt*y(i,3)/(0.04d0*beta*dt + 1d0) &
+!         - beta*dt*(-60000000.0d0*y(i,2) - 10000.0d0*y(i,3)) + 1d0), 1.0d0 /), &
+!         (/3,3/)))
+!
+!      U(i,:,:) = transpose(reshape( &
+!        (/ 0.04d0*beta*dt + 1, -10000.0*beta*dt*y(i,3), -10000.0*beta*dt*y(i,2) , & ! end row 1
+!         0d0, -400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) - beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1, &
+!         -400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) + 10000.0*beta*dt*y(i,2), &! end row 2
+!         0d0, 0d0, 60000000.0*beta*dt*y(i,2)*(-400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) &
+!          + 10000.0*beta*dt*y(i,2))/(-400.0*beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1) -  &
+!          beta*dt*(-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1) + 1 /), & ! end row 3
+!         (/3,3/)))
 
   end subroutine GetLU
 
