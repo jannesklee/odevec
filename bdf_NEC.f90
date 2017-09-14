@@ -144,7 +144,7 @@ contains
   subroutine SolveLinearSystem(this,t,dt,y)
     implicit none
     type(bdf_type)   :: this
-    double precision, dimension(this%nvector,this%neq) :: y, rhs_init
+    double precision, dimension(this%nvector,this%neq) :: y
     double precision :: conv_error, error, dt, t, dt_scale, conv_rate
     logical          :: success,reset
     integer          :: conv_iterator, lte_iterator
@@ -156,15 +156,15 @@ contains
     call GetLU(this,this%coeff(1,this%order),y,dt,this%L,this%U)
 
     ! Calculate initial right hand side
-    call CalcRHS(this,this%y_NS(:,:,0),rhs_init)
-    this%y_NS(:,:,1) = dt*rhs_init(:,:)
+    call CalcRHS(this,this%y_NS(:,:,0),this%rhs)
+    this%y_NS(:,:,1) = dt*this%rhs(:,:)
 
     ! some initializations
-    this%den = 0.0d0
-    conv_rate = 0.7d0
-    lte_iterator = 0
-    conv_iterator  = 0
-    conv_error = 1d20
+    this%den      = 0.0d0
+    conv_rate     = 0.7d0
+    conv_error    = 1d20
+    lte_iterator  = 0
+    conv_iterator = 0
 
     ! important quantity to measure density
     call CalcErrorWeight(this,this%rtol,this%atol,this%y,this%err_weight)
@@ -448,7 +448,7 @@ contains
     implicit none
     type(bdf_type) :: this
     double precision, dimension(this%nvector,this%neq,this%neq) :: L, U
-    double precision, dimension(this%nvector,this%neq)          :: den, res
+    double precision, dimension(this%nvector,this%neq)          :: res, den
     integer        :: i,j,k
     intent(in)     :: L, U, res
     intent(out)    :: den
@@ -468,7 +468,7 @@ contains
     end do
 
     ! upper system
-    den = 0.0
+    den(:,:) = 0.0
     do k = this%neq,1,-1
       do j = k+1,this%neq
 !cdir nodep
@@ -534,8 +534,8 @@ contains
     implicit none
     type(bdf_type)    :: this
     integer           :: i,j
+    double precision  :: dt
     double precision, dimension(this%nvector,this%neq) :: y, res
-    double precision  :: dt, t
     intent (in)       :: y, dt
     intent (out)      :: res
 
