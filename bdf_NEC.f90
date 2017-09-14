@@ -9,10 +9,19 @@ module bdf_method_mod
     integer :: iterator                                     !> iterator
     double precision :: t                                   !> current time
     double precision :: dt                                  !> current timestep
-    double precision, pointer, dimension(:,:)   :: y        !> current solution array | often y_NS(:,:,0)
-    double precision, pointer, dimension(:,:)   :: en       !> correction vector
-    double precision, pointer, dimension(:,:)   :: coeff    !> coefficient matrix
-    double precision, pointer, dimension(:,:)   :: tautable !> solution table of an often evaluated function
+    double precision :: rtol                                !> relative tolerance
+    double precision :: atol                                !> absolute tolerance
+    double precision, pointer, dimension(:,:) :: y          !> current solution array | often y_NS(:,:,0)
+    double precision, pointer, dimension(:,:) :: en         !> correction vector
+    double precision, pointer, dimension(:,:) :: en_old     !> old correction vector
+    double precision, pointer, dimension(:,:) :: den        !> corrector to correction vector
+    double precision, pointer, dimension(:,:) :: den_tmp    !> buffer array
+    double precision, pointer, dimension(:,:) :: err_weight !> error weight
+    double precision, pointer, dimension(:,:) :: rhs        !> right-hand-side
+    double precision, pointer, dimension(:,:) :: res        !> residuum in linear equation
+    double precision, pointer, dimension(:,:) :: coeff      !> coefficient matrix
+    double precision, pointer, dimension(:,:) :: tautable   !> solution table of an often evaluated function
+    double precision, pointer, dimension(:,:,:) :: L,U      !> lower, upper triangular matrix
     double precision, pointer, dimension(:,:,:) :: y_NS     !> Nordsieck history array
   end type bdf_type
 
@@ -21,23 +30,35 @@ contains
 
 
   !> Allocates all memory for bdf-solver
-  subroutine InitBDF(this,nvector,neq)
+  subroutine InitBDF(this,nvector,neq,rtol,atol)
     implicit none
-    type(bdf_type) :: this
-    integer                 :: nvector, neq
-    integer                 :: err, i, j
-    intent(in)              :: nvector, neq
-    intent(out)             :: this
+    type(bdf_type)   :: this
+    integer          :: nvector, neq
+    integer          :: err, i, j
+    double precision :: rtol, atol
+    intent(in)       :: nvector, neq
+    intent(out)      :: this
 
     this%nvector = nvector
     this%neq     = neq
+    this%rtol    = rtol
+    this%atol    = atol
 
     ! allocate fields
-    allocate( this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
+    allocate( &
               this%y(this%nvector,this%neq), &
               this%en(this%nvector,this%neq), &
+              this%en_old(this%nvector,this%neq), &
+              this%den(this%nvector,this%neq), &
+              this%den_tmp(this%nvector,this%neq), &
+              this%err_weight(this%nvector,this%neq), &
+              this%rhs(this%nvector,this%neq), &
+              this%res(this%nvector,this%neq), &
               this%coeff(0:6,6), &
               this%tautable(this%maxorder,0:this%maxorder), &
+              this%L(this%nvector,this%neq,this%neq), &
+              this%U(this%nvector,this%neq,this%neq), &
+              this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
               STAT=err)
     if (err.ne.0) then
       print *, "Memory allocation error. BDF-Solver could not be intialized."
@@ -69,33 +90,36 @@ contains
     type(bdf_type) :: this
     integer :: err
 
-    deallocate(this%y_NS,this%y,this%en,this%coeff,this%tautable, &
-              stat=err)
+    deallocate(this%y,this%en,this%en_old,this%den,this%den_tmp,this%err_weight, &
+               this%rhs,this%res,this%coeff,this%tautable,this%L,this%U,this%y_NS, &
+               stat=err)
 
     if (err.ne.0) then
       print *, "Memory deallocation error. BDF-Solver was not properly closed."
+      stop
     end if
   end subroutine
 
 
   !> Main subroutine to be called from outside
-  subroutine SolveODE_BDF(this,t,t_stop,dt,rtol,atol,y)
+  subroutine SolveODE_BDF(this,t,dt,t_stop,y)
     implicit none
-    type(bdf_type) :: this
-    double precision        :: t, t_stop, dt, atol,rtol
-    double precision, dimension(this%nvector,this%neq)      :: y, en
-    double precision, dimension(this%nvector,this%neq,0:6)      :: y_NS
+    type(bdf_type)    :: this
+    double precision  :: t, t_stop, dt, rtol, atol
+    double precision, dimension(this%nvector,this%neq) :: y
 !    double precision  :: finish, start
-    integer :: iterator
-    intent(in)        :: t_stop, rtol, atol
-    intent(inout)     :: y, t, dt
+    intent(in)        :: t_stop
+    intent(inout)     :: y, t
 
+
+    ! todo implement routine in order to calculate initial dt
+    ! todo y needs to be either always run on this%y or it needs to be passed all the time
 
     ! some initializations
     this%order       = 1
-    y_NS(:,:,0) = y(:,:)
-    en(:,:)     = 0.0
-    iterator    = 0
+    this%y(:,:)      = y(:,:)
+    this%y_NS(:,:,0) = this%y(:,:)
+    this%iterator    = 0
 
     ! initial conditions
     print *, t, y(1,:)
@@ -105,7 +129,7 @@ contains
     ! main solve - solve the linear system
     do while (t <= t_stop)
       ! solve the system
-      call SolveLinearSystem(this,atol,rtol,en,y,y_NS,t,dt)
+      call SolveLinearSystem(this,t,dt,y)
 
       this%iterator = this%iterator + 1
     end do
@@ -117,42 +141,33 @@ contains
 
 
   !> Solves a linear system for a given timestep
-  subroutine SolveLinearSystem(this,atol,rtol,en_old,y,y_NS,t,dt)
+  subroutine SolveLinearSystem(this,t,dt,y)
     implicit none
-    type(bdf_type) :: this
-    double precision, dimension(this%nvector,this%neq) :: res, y, rhs_init, den, err_weight
-    double precision, dimension(this%nvector,this%neq) :: en_old, en
-    double precision, dimension(this%nvector,this%neq,0:6) :: y_NS
-    double precision, dimension(this%nvector,this%neq,this%neq) :: L, U
-    double precision :: theta, sigma, conv_error, error, dt, t, beta, rtol, atol, dt_scale, conv_rate
+    type(bdf_type)   :: this
+    double precision, dimension(this%nvector,this%neq) :: y, rhs_init
+    double precision :: conv_error, error, dt, t, dt_scale, conv_rate
     logical          :: success,reset
     integer          :: conv_iterator, lte_iterator
-    intent(inout)    :: y_NS, y, dt, en_old, t, this
-    intent(in)       :: atol,rtol
-
+    intent(inout)    :: y, dt, t, this
 
     ! 1. initialization ---------------------------------------------------------------------------!
-    ! general variables
-    sigma = 0.01d0
-    beta = 1.0d0
-    theta = HUGE(1d0)
-
     ! use the LU matrices from the predictor value
-    call GetLU(this,y,t,beta,dt,L,U)
+    ! todo: check if this%coeff(1,this%order)=beta or this%coeff(this%order,1)
+    call GetLU(this,this%coeff(1,this%order),y,dt,this%L,this%U)
 
     ! Calculate initial right hand side
-    call CalcRHS(this,t,y_NS(:,:,0),rhs_init)
-    y_NS(:,:,1) = dt*rhs_init(:,:)
+    call CalcRHS(this,this%y_NS(:,:,0),rhs_init)
+    this%y_NS(:,:,1) = dt*rhs_init(:,:)
 
     ! some initializations
-    den = 0.0d0
+    this%den = 0.0d0
     conv_rate = 0.7d0
     lte_iterator = 0
     conv_iterator  = 0
     conv_error = 1d20
 
     ! important quantity to measure density
-    call CalcErrorWeight(this,rtol,atol,y,err_weight)
+    call CalcErrorWeight(this,this%rtol,this%atol,this%y,this%err_weight)
 
     ! 2. predictor --------------------------------------------------------------------------------!
     success = .FALSE.
@@ -160,38 +175,38 @@ contains
       reset=.FALSE.
 
       ! predictor step - set predicted y_NS, en=0.0
-      call PredictSolution(this,y_NS,en)
-      y(:,:) = y_NS(:,:,0)
+      call PredictSolution(this,this%y_NS,this%en)
+      y(:,:) = this%y_NS(:,:,0)
       ! 3. corrector ------------------------------------------------------------------------------!
       corrector: do while (conv_error > this%tautable(this%order,this%order)/(2d0*(this%order+2d0)))
         ! calculates residuum
-        call CalcResiduum(this,y,y_NS,en,dt,res)
+        call CalcResiduum(this,y,dt,this%res)
 
         ! calculates the solution for dy with given residuum
         ! \todo this function needs to be enhanced for sparse matrices
-        call SolveLU(this,L,U,res,den)
+        call SolveLU(this,this%L,this%U,this%res,this%den)
 
         ! add correction to solution vector
-        en = en + den
-        y = y_NS(:,:,0) + this%coeff(0,this%order)*en
+        this%en = this%en + this%den
+        y = this%y_NS(:,:,0) + this%coeff(0,this%order)*this%en
 
         ! convergence test:
         ! if fail reset and run again starting at predictor step with 0.25 times the step-size
-        call CheckConvergence(this,conv_iterator,conv_rate,den,conv_error,err_weight,reset)
+        call CheckConvergence(this,conv_iterator,conv_rate,this%den,conv_error,this%err_weight,reset)
         conv_iterator = conv_iterator + 1
         if (reset) then
           dt_scale = 0.25
-          call ResetSystem(this,dt_scale,y_NS,dt)
+          call ResetSystem(this,dt_scale,dt,this%y_NS)
           cycle predictor
         end if
       end do corrector
 
       ! local truncation error test:
       ! checks if solution is good enough and rewind everything if necessary
-      error = WeightedNorm(this,en,err_weight)/this%tautable(this%order,this%order)
+      error = WeightedNorm(this,this%en,this%err_weight)/this%tautable(this%order,this%order)
       if (error > 1d0) then
         dt_scale = 0.2
-        call ResetSystem(this,dt_scale,y_NS,dt)
+        call ResetSystem(this,dt_scale,dt,this%y_NS)
         lte_iterator = lte_iterator + 1
         cycle predictor
       else
@@ -200,7 +215,7 @@ contains
     end do predictor
 
     ! rewrite history array
-    call UpdateNordsieck(this, en, y_NS)
+    call UpdateNordsieck(this, this%en, this%y_NS)
 
    ! write the result to the terminal or elsewhere
     t = t + dt
@@ -209,23 +224,23 @@ contains
     ! 4. sanity checks & step-size/order control --------------------------------------------------!
     ! calculate step size for current, upper & lower order and use largest one
     ! additionally it changes the order and enlarges the Nordsieck history array if necessary
-    call CalcStepSizeOrder(this,this%order,err_weight,en,en_old,y_NS,dt_scale)
+    call CalcStepSizeOrder(this,this%order,this%err_weight,this%en,this%en_old,this%y_NS,dt_scale)
 
     ! Adjust the Nordsieck history array with new step size & new order
-    call SetStepSize(this,dt_scale,y_NS,dt)
-    en_old = en
+    call SetStepSize(this,dt_scale,this%y_NS,dt)
+    this%en_old = this%en
   end subroutine SolveLinearSystem
 
 
   !>
-  subroutine ResetSystem(this,dt_scale,y_NS,dt)
+  subroutine ResetSystem(this,dt_scale,dt,y_NS)
     implicit none
-    type(bdf_type) :: this
-    integer :: j,k,i,l
+    type(bdf_type)   :: this
+    integer          :: j,k,i,l
     double precision :: dt_scale, dt
     double precision, dimension(this%nvector,this%neq,0:6) :: y_NS
-    intent(in) :: dt_scale
-    intent(inout) :: y_NS, dt, this
+    intent(in)       :: dt_scale
+    intent(inout)    :: y_NS, dt, this
 
     ! set the matrix back to old value
     do k = 0,this%order-1
@@ -355,12 +370,12 @@ contains
   !! \f$r,rr,rrr,...\f$ to the Nordsieck array.
   subroutine SetStepSize(this,dt_scale,y_NS,dt)
     implicit none
-    type(bdf_type) :: this
-    integer :: i,j,k
+    type(bdf_type)   :: this
+    integer          :: i,j,k
     double precision :: dt_scale,dtt_scale,dt
     double precision, dimension(this%nvector,this%neq,0:this%maxorder+1) :: y_NS
-    intent(inout) :: y_NS,dt,this
-    intent(in) :: dt_scale
+    intent(inout)    :: y_NS,dt,this
+    intent(in)       :: dt_scale
 
     dtt_scale = 1.0
     do k = 1,this%order
@@ -378,14 +393,14 @@ contains
 
 
   !>
-  subroutine UpdateNordsieck(this, en, y_NS)
+  subroutine UpdateNordsieck(this,en,y_NS)
     implicit none
     type(bdf_type) :: this
-    integer :: i,j,k
+    integer        :: i,j,k
     double precision, dimension(this%nvector,this%neq)                    :: en
     double precision, dimension(this%nvector,this%neq,0:this%maxorder+1)  :: y_NS
-    intent(in) :: en
-    intent(inout) :: y_NS, this
+    intent(in)     :: en
+    intent(inout)  :: y_NS, this
 
     do k = 0,this%order
 !cdir collapse
@@ -398,20 +413,15 @@ contains
   end subroutine UpdateNordsieck
 
 
-  !> predicts the solution
-  !!
-  !! This subroutine predicts the solution in Nordsieck representation by
-  !! \f[
-  !!    \mathbf{z}_n^{[0]} &= \mathbf{z}_{n-1} \mathbf{A} \\
-  !!    e_n^{0} &= 0.
-  !! \f]
+  !> Predicts the solution
   subroutine PredictSolution(this,y_NS,en)
     implicit none
-    type(bdf_type) :: this
-    integer :: i,j,k,l
+    type(bdf_type)  :: this
+    integer         :: i,j,k,l
     double precision, dimension(this%nvector,this%neq,0:6) :: y_NS
-    double precision, dimension(this%nvector,this%neq) :: en
-    intent (inout)  :: y_NS,this
+    double precision, dimension(this%nvector,this%neq)     :: en
+    intent (in)     :: this
+    intent (inout)  :: y_NS
     intent (out)    :: en
 
     ! this loop effectively solves the Pascal Triangle without multiplications
@@ -434,41 +444,40 @@ contains
   !> Solve the System \f$ LUx=r \f$
   !!
   !! \todo this is until now for dense systems. it should be changed to sparse matrices
-  subroutine SolveLU(this,L,U,res,dy)
+  subroutine SolveLU(this,L,U,res,den)
     implicit none
     type(bdf_type) :: this
     double precision, dimension(this%nvector,this%neq,this%neq) :: L, U
-    double precision, dimension(this%nvector,this%neq) :: dy, res
-    double precision, dimension(this%nvector,this%neq) :: y
-    intent(in) :: res, L, U
-    intent(out) :: dy
-    integer :: i,j,k
+    double precision, dimension(this%nvector,this%neq)          :: den, res
+    integer        :: i,j,k
+    intent(in)     :: L, U, res
+    intent(out)    :: den
 
-    y = 0.0
+    this%den_tmp(:,:) = 0.0
     ! lower system
     do k = 1,this%neq,1
       do j = 1,k-1
 !cdir nodep
         do i = 1,this%nvector
-          y(i,k) = y(i,k) + L(i,k,j)*y(i,j)
+          this%den_tmp(i,k) = this%den_tmp(i,k) + L(i,k,j)*this%den_tmp(i,j)
         end do
       end do
 !cdir nodep
-      y(:,k) = res(:,k) - y(:,k)
-      y(:,k) = y(:,k)/L(:,k,k)
+      this%den_tmp(:,k) = res(:,k) - this%den_tmp(:,k)
+      this%den_tmp(:,k) = this%den_tmp(:,k)/L(:,k,k)
     end do
 
     ! upper system
-    dy = 0.0
+    den = 0.0
     do k = this%neq,1,-1
       do j = k+1,this%neq
 !cdir nodep
         do i = 1,this%nvector
-          dy(i,k) = dy(i,k) + U(i,k,j)*dy(i,j)
+          den(i,k) = den(i,k) + U(i,k,j)*den(i,j)
         end do
       end do
-      dy(:,k) = y(:,k) - dy(:,k)
-      dy(:,k) = dy(:,k)/U(:,k,k)
+      den(:,k) = this%den_tmp(:,k) - den(:,k)
+      den(:,k) = den(:,k)/U(:,k,k)
     end do
   end subroutine SolveLU
 
@@ -476,14 +485,14 @@ contains
   !> Get the Matrices L and U either from A or given
   !!
   !! \todo The Python preprocessor needs to include the code here
-  subroutine GetLU(this,y,t,beta,dt,L,U)
+  subroutine GetLU(this,beta,y,dt,L,U)
     implicit none
     type(bdf_type) :: this
     integer :: i
-    double precision :: t, beta, dt
+    double precision :: beta, dt
     double precision, dimension(this%nvector,this%neq) :: y
     double precision, dimension(this%nvector,this%neq,this%neq) :: L,U
-    intent (in) :: y, t, beta, dt
+    intent (in) :: y, beta, dt
     intent (out) :: L, U
 
 !cdir nodep
@@ -521,22 +530,21 @@ contains
   !!    r = y_n - \sum_{i=1}^{order} \alpha_i * y_{n-i} - h \beta_0 f(t_n, y_n).
   !! \f]
   !! For a converging system \f$ r \approx 0 \f$ should become true.
-  subroutine CalcResiduum(this,y,y_NS,en,dt,res)
+  subroutine CalcResiduum(this,y,dt,res)
     implicit none
-    type(bdf_type) :: this
-    integer :: i,j
-    double precision, dimension(this%nvector,this%neq) :: y, rhs, res, en
-    double precision, dimension(this%nvector,this%neq,0:6) :: y_NS
-    double precision :: dt, t
-    intent (in) :: y, y_NS, dt, en
-    intent (out) :: res
+    type(bdf_type)    :: this
+    integer           :: i,j
+    double precision, dimension(this%nvector,this%neq) :: y, res
+    double precision  :: dt, t
+    intent (in)       :: y, dt
+    intent (out)      :: res
 
-    call CalcRHS(this,t,y,rhs)
+    call CalcRHS(this,y,this%rhs)
 
 !cdir collapse
     do j=1,this%neq
       do i=1,this%nvector
-        res(i,j) = dt*rhs(i,j) - y_NS(i,j,1) - en(i,j)
+        res(i,j) = dt*this%rhs(i,j) - this%y_NS(i,j,1) - this%en(i,j)
       end do
     end do
   end subroutine CalcResiduum
@@ -546,15 +554,14 @@ contains
   !!
   !! \todo needs to be done external later!
   !! This is Robertson's example
-  subroutine CalcRHS(this,t,y,rhs)
+  subroutine CalcRHS(this,y,rhs)
     implicit none
-    type(bdf_type) :: this
-    integer :: i
+    type(bdf_type)  :: this
+    integer         :: i
     double precision, dimension(this%nvector,this%neq) :: y
     double precision, dimension(this%nvector,this%neq) :: rhs
-    double precision :: t
-    intent (in) :: y, t
-    intent (out) :: rhs
+    intent (in)     :: y
+    intent (out)    :: rhs
 
 !cdir nodep
     do i=1,this%nvector

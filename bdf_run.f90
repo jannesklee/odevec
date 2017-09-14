@@ -6,15 +6,15 @@ program bdf_program
   integer, parameter :: neq=3
   integer, parameter :: nvector=1
   double precision, dimension(nvector,neq) :: y
-  double precision :: t_start, t_stop, dt, rtol, atol, start, finish
+  double precision :: t_start, t_stop, dt, start, finish, rtol, atol
 
 
-  call InitBDF(BDF,nvector,neq)
+  call InitBDF(BDF,nvector,neq,rtol,atol)
 
 
   do m=28,28
-    rtol = 10d0**(-2d0-m*0.25d0)   ! relative tolerance
-    atol = 1d-6*rtol               ! absolute tolerance
+    BDF%rtol = 10d0**(-2d0-m*0.25d0)   ! relative tolerance
+    BDF%atol = 1d-6*BDF%rtol               ! absolute tolerance
 
     t_start = 0.0d0
     t_stop  = 40d0
@@ -26,7 +26,7 @@ program bdf_program
 
     call cpu_time(start)
 
-    call SolveODE_BDF(BDF, t_start, t_stop, dt, rtol, atol, y)
+    call SolveODE_BDF(BDF, t_start, dt, t_stop, y)
 
     call cpu_time(finish)
 
