@@ -105,7 +105,7 @@ contains
   subroutine SolveODE_BDF(this,t,dt,t_stop,y)
     implicit none
     type(bdf_type)    :: this
-    double precision  :: t, t_stop, dt, rtol, atol
+    double precision  :: t, t_stop, dt
     double precision, dimension(this%nvector,this%neq) :: y
 !    double precision  :: finish, start
     intent(in)        :: t_stop
@@ -122,7 +122,7 @@ contains
     this%iterator    = 0
 
     ! initial conditions
-    print *, t, y(1,:)
+!    print *, t, y(1,:)
 
 !    call cpu_time(start)
 
@@ -153,7 +153,7 @@ contains
     ! 1. initialization ---------------------------------------------------------------------------!
     ! use the LU matrices from the predictor value
     ! todo: check if this%coeff(1,this%order)=beta or this%coeff(this%order,1)
-    call GetLU(this,this%coeff(1,this%order),y,dt,this%L,this%U)
+    call GetLU(this,this%coeff(this%order,1),y,dt,this%L,this%U)
 
     ! Calculate initial right hand side
     call CalcRHS(this,this%y_NS(:,:,0),this%rhs)
@@ -219,7 +219,7 @@ contains
 
    ! write the result to the terminal or elsewhere
     t = t + dt
-    print *, t, y(1,:)
+!    print *, t, y(1,:)
 
     ! 4. sanity checks & step-size/order control --------------------------------------------------!
     ! calculate step size for current, upper & lower order and use largest one
@@ -437,7 +437,7 @@ contains
     end do
 
     ! set the correction vector to zero
-    en = 0.0
+    en(:,:) = 0.0
   end subroutine PredictSolution
 
 
@@ -450,10 +450,17 @@ contains
     double precision, dimension(this%nvector,this%neq,this%neq) :: L, U
     double precision, dimension(this%nvector,this%neq)          :: res, den
     integer        :: i,j,k
+    intent(inout)  :: this
     intent(in)     :: L, U, res
     intent(out)    :: den
 
-    this%den_tmp(:,:) = 0.0
+!call ftrace_region_begin(“SolveLU inner“)
+!cdir collapse
+    do j=1,this%neq
+      do i=1,this%nvector
+        this%den_tmp(i,j) = 0.0
+      end do
+    end do
     ! lower system
     do k = 1,this%neq,1
       do j = 1,k-1
@@ -462,13 +469,19 @@ contains
           this%den_tmp(i,k) = this%den_tmp(i,k) + L(i,k,j)*this%den_tmp(i,j)
         end do
       end do
-!cdir nodep
-      this%den_tmp(:,k) = res(:,k) - this%den_tmp(:,k)
-      this%den_tmp(:,k) = this%den_tmp(:,k)/L(:,k,k)
+      do i = 1,this%nvector
+        this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
+        this%den_tmp(i,k) = this%den_tmp(i,k)/L(i,k,k)
+      end do
     end do
 
     ! upper system
-    den(:,:) = 0.0
+!cdir collapse
+    do j=1,this%neq
+      do i=1,this%nvector
+        den(i,j) = 0.0
+      end do
+    end do
     do k = this%neq,1,-1
       do j = k+1,this%neq
 !cdir nodep
@@ -476,9 +489,13 @@ contains
           den(i,k) = den(i,k) + U(i,k,j)*den(i,j)
         end do
       end do
-      den(:,k) = this%den_tmp(:,k) - den(:,k)
-      den(:,k) = den(:,k)/U(:,k,k)
+      do i = 1,this%nvector
+        den(i,k) = this%den_tmp(i,k) - den(i,k)
+        den(i,k) = den(i,k)/U(i,k,k)
+      end do
     end do
+
+!call ftrace_region_end(“SolveLU inner“)
   end subroutine SolveLU
 
 
