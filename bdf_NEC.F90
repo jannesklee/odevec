@@ -216,6 +216,7 @@ contains
 
     ! advance in time
     t = t + dt
+    print *, t, y(1,:)
 
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for current order+(0,-1,+1) -> use largest for next step
@@ -505,34 +506,6 @@ contains
 #ODEVEC_LU
 
     end do
-
-!      L(i,1,1) = 1d0
-!      L(i,1,2) = 0d0
-!      L(i,1,3) = 0d0
-!      L(i,2,1) = -0.4d0*beta*dt/(0.04d0*beta*dt+1d0)
-!      L(i,2,2) = 1d0
-!      L(i,2,3) = 0d0
-!      L(i,3,1) = 0d0
-!      L(i,3,2) = - 60000000.0d0*beta*dt*y(i,2)/(-400.0d0*beta*beta*dt*dt*y(i,3)/ &
-!                  (0.04d0*beta*dt + 1d0) - beta*dt*(-60000000.0d0*y(i,2) -  &
-!                  10000.0d0*y(i,3)) + 1d0)
-!      L(i,3,3) = 1d0
-!      U(i,1,1) = 0.04d0*beta*dt + 1d0
-!      U(i,1,2) = -10000.0*beta*dt*y(i,3)
-!      U(i,1,3) = -10000.0*beta*dt*y(i,2)
-!      U(i,2,1) = 0d0
-!      U(i,2,2) = -400.0*beta**2*dt*dt*y(i,3)/(0.04*beta*dt + 1) - beta*dt* &
-!                 (-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1d0
-!      U(i,2,3) = -400.0*beta**2*dt**2*y(i,2)/(0.04*beta*dt + 1) +  &
-!                  10000.0*beta*dt*y(i,2)
-!      U(i,3,1) = 0d0
-!      U(i,3,2) = 0d0
-!      U(i,3,3) = 60000000.0*beta*dt*y(i,2)*(-400.0*beta**2*dt**2*y(i,2)/ &
-!                  (0.04*beta*dt + 1d0) + 10000.0*beta*dt*y(i,2))/(-400.0 * &
-!                  beta**2*dt**2*y(i,3)/(0.04*beta*dt + 1d0) - beta*dt* &
-!                  (-60000000.0*y(i,2) - 10000.0*y(i,3)) + 1d0) + 1d0
-!
-
   end subroutine GetLU
 
 
