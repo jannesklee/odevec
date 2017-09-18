@@ -18,18 +18,17 @@ program bdf_program
 
     t_start = 0.0d0
     t_stop  = 40d0
-!    t_stop  = 1d4
     dt = 1d-6
 
     do i=1,nvector
       y(i,:) = (/ 1d0, 0d0, 0d0 /)
     end do
 
-!    call cpu_time(start)
+    call cpu_time(start)
 
     call SolveODE_BDF(BDF, t_start, dt, t_stop, y)
 
-!    call cpu_time(finish)
+    call cpu_time(finish)
 
 !    print *, BDF%rtol, BDF%atol, finish-start
 

@@ -502,30 +502,7 @@ contains
 !cdir nodep
     do i=1,this%nvector
 
-      L(i,1,1) = 1
-      U(i,1,1) = 0.04d0*beta*dt + 1
-      L(i,1,2) = 0
-      U(i,1,2) = -10000*beta*dt*y(i,3)
-      L(i,1,3) = 0
-      U(i,1,3) = -10000*beta*dt*y(i,2)
-      L(i,2,1) = -0.04d0*beta*dt/(0.04d0*beta*dt + 1)
-      U(i,2,1) = 0
-      L(i,2,2) = 1
-      U(i,2,2) = -400.0d0*beta**2*dt**2*y(i,3)/(0.04d0*beta*dt + 1) - beta*dt*(-60000000* &
-      y(i,2) - 10000*y(i,3)) + 1
-      L(i,2,3) = 0
-      U(i,2,3) = -400.0d0*beta**2*dt**2*y(i,2)/(0.04d0*beta*dt + 1) + 10000*beta*dt*y(i,2 &
-      )
-      L(i,3,1) = 0
-      U(i,3,1) = 0
-      L(i,3,2) = -60000000*beta*dt*y(i,2)/(-400.0d0*beta**2*dt**2*y(i,3)/(0.04d0*beta*dt &
-      + 1) - beta*dt*(-60000000*y(i,2) - 10000*y(i,3)) + 1)
-      U(i,3,2) = 0
-      L(i,3,3) = 1
-      U(i,3,3) = 60000000*beta*dt*y(i,2)*(-400.0d0*beta**2*dt**2*y(i,2)/(0.04d0*beta*dt + &
-      1) + 10000*beta*dt*y(i,2))/(-400.0d0*beta**2*dt**2*y(i,3)/(0.04d0 &
-      *beta*dt + 1) - beta*dt*(-60000000*y(i,2) - 10000*y(i,3)) + 1) + &
-      1
+#ODEVEC_LU
 
     end do
 
