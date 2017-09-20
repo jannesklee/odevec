@@ -36,14 +36,14 @@ program rober
 
     call cpu_time(finish)
 
-!    print *, BDF%rtol, BDF%atol, finish-start
+    print *, BDF%rtol, BDF%atol, finish-start
 
     ! check the solution
     write(rtol_char,'(F5.2)') log10(BDF%rtol)
-    TAP_CHECK_CLOSE(40.0,real(t_start),0.1, "ROBER - time, log(rtol):" // rtol_char)
-    TAP_CHECK_CLOSE(0.71582657204273303,real(y(1,1)),eps1,"ROBER - y(1), log(rtol):" // rtol_char)
-    TAP_CHECK_CLOSE(9.1855154650076860E-006,real(y(1,2)),eps2,"ROBER - y(2), log(rtol):" // rtol_char)
-    TAP_CHECK_CLOSE(0.28416424223264120,real(y(1,3)),eps3,"ROBER - y(3), log(rtol):" // rtol_char)
+    TAP_CHECK_CLOSE(40.0,real(t_start),0.1, "ROBER - time, log(rtol):"//rtol_char)
+    TAP_CHECK_CLOSE(0.71582657204273303,real(y(1,1)),eps1,"ROBER - y(1), log(rtol):"//rtol_char)
+    TAP_CHECK_CLOSE(9.1855154650076860E-006,real(y(1,2)),eps2,"ROBER - y(2), log(rtol):"//rtol_char)
+    TAP_CHECK_CLOSE(0.28416424223264120,real(y(1,3)),eps3,"ROBER - y(3), log(rtol):"//rtol_char)
   end do
 
   TAP_DONE
