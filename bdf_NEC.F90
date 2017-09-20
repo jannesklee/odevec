@@ -1,3 +1,4 @@
+!> module that provides a cell-vectorized ODE-solver based on the BDF-scheme
 module bdf_method_mod
   implicit none
 
@@ -57,7 +58,7 @@ contains
               this%rhs(this%nvector,this%neq), &
               this%res(this%nvector,this%neq), &
               this%coeff(0:6,6), &
-              this%tautable(this%maxorder,0:this%maxorder), &
+              this%tautable(this%maxorder+1,0:this%maxorder+1), &
               this%L(this%nvector,this%neq,this%neq), &
               this%U(this%nvector,this%neq,this%neq), &
               this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
@@ -78,8 +79,8 @@ contains
     (/7, 6/))
 
     ! precompute all tau and save them in a table (better performance)
-    do i=1,this%maxorder
-      do j=0,this%maxorder
+    do i=1,this%maxorder+1
+      do j=0,this%maxorder+1
         this%tautable(i,j) = tau(i,j,this%coeff)
       end do
     end do
@@ -216,7 +217,7 @@ contains
 
     ! advance in time
     t = t + dt
-    print *, t, y(1,:)
+!    print *, t, y(1,:)
 
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for current order+(0,-1,+1) -> use largest for next step

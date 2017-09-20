@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from shutil import copyfile
-from sympy import symbols, Matrix, eye, fcode
+from sympy import symbols, Matrix, eye, fcode, SparseMatrix, lambdify
 
 # sympy part, calculate L and U
 # TODO need to include here a function which gets the jacobian by
@@ -10,12 +10,19 @@ from sympy import symbols, Matrix, eye, fcode
 neq = 3
 x = symbols('y(i\,0:%d)' % (neq + 1))
 dt, beta = symbols('dt beta')
-J = Matrix([[-4 / 100, 10**4 * x[3], 10**4 * x[2]],
-            [4 / 100, -6 * 10**7 * x[2] - 10**4 * x[3], -10**4 * x[2]],
-            [0, 6 * 10**7 * x[2], 0]])
+J = SparseMatrix([[-4 / 100, 10**4 * x[3], 10**4 * x[2]],
+                  [4 / 100, -6 * 10**7 * x[2] - 10**4 * x[3], -10**4 * x[2]],
+                  [0, 6 * 10**7 * x[2], 0]])
 
-P = eye(3) - dt * beta * J
-L, U, _ = P.LUdecomposition()
+P = SparseMatrix(eye(neq) - dt * beta * J)
+
+_, L, _, U = P.LUdecompositionFF()
+# print(U.nnz())
+# print(L.RL)
+
+
+# Both matrices need to stored in a good proper
+# CompactStorageScheme()
 
 # write changes to file
 copyfile("bdf_NEC.F90", "bdf_NEC.f90")
@@ -36,7 +43,14 @@ for row in fh:
         srow = row.strip()
         fout.write(row)
 
-fout.close()
 
+print("sparsity structure of P:")
+P.print_nonzero()
 
-print("done!")
+print("sparsity structure of L:")
+L.print_nonzero()
+
+print("sparsity structure of U:")
+U.print_nonzero()
+
+print("OdeVec preprocessing done!")
