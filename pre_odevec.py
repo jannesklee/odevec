@@ -16,7 +16,7 @@ J = SparseMatrix([[-4 / 100, 10**4 * x[3], 10**4 * x[2]],
 
 P = SparseMatrix(eye(neq) - dt * beta * J)
 
-_, L, _, U = P.LUdecompositionFF()
+L,U,_ = P.LUdecomposition()
 # print(U.nnz())
 # print(L.RL)
 
@@ -32,11 +32,14 @@ fout = open("bdf_NEC.f90", "w")
 
 for row in fh:
     srow = row.strip()
-    if(srow == "#ODEVEC_LU"):
+    if(srow == "#ODEVEC_L"):
         for i in range(L.shape[0]):
             for j in range(L.shape[1]):
                 fout.write("      L(i," + str(i + 1) + "," + str(j + 1) + ") = " +
                            fcode(L[i, j], source_format='free', standard=95) + "\n")
+    elif(srow == "#ODEVEC_U"):
+        for i in range(L.shape[0]):
+            for j in range(L.shape[1]):
                 fout.write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
                            fcode(U[i, j], source_format='free', standard=95) + "\n")
     else:
