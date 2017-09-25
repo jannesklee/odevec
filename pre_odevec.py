@@ -1,20 +1,20 @@
 #!/usr/bin/env python
 
-from shutil import copyfile
 from sympy import symbols, Matrix, eye, fcode, SparseMatrix, lambdify
 
 # sympy part, calculate L and U
-# TODO need to include here a function which gets the jacobian by
-# KROME
+# TODO need to include here a function which gets the rhs by krome
 
 neq = 3
-x = symbols('y(i\,0:%d)' % (neq + 1))
-dt, beta = symbols('dt beta')
-J = SparseMatrix([[-4 / 100, 10**4 * x[3], 10**4 * x[2]],
-                  [4 / 100, -6 * 10**7 * x[2] - 10**4 * x[3], -10**4 * x[2]],
-                  [0, 6 * 10**7 * x[2], 0]])
+y = symbols('y(i\,1:%d)'%(neq+1))
 
-P = SparseMatrix(eye(neq) - dt * beta * J)
+# robertson's test
+rhs = Matrix([-0.04*y[0]+1e4*y[1]*y[2],0.04*y[0]-3e7*y[1]*y[1]-1e4*y[1]*y[2],3e7*y[1]*y[1]])
+
+jac = SparseMatrix(rhs.jacobian(y))
+dt, beta = symbols('dt beta')
+
+P = SparseMatrix(eye(neq) - dt * beta * jac)
 
 L,U,_ = P.LUdecomposition()
 # print(U.nnz())
@@ -25,8 +25,6 @@ L,U,_ = P.LUdecomposition()
 # CompactStorageScheme()
 
 # write changes to file
-copyfile("bdf_NEC.F90", "bdf_NEC.f90")
-
 fh = open("bdf_NEC.F90")
 fout = open("bdf_NEC.f90", "w")
 
@@ -42,6 +40,10 @@ for row in fh:
             for j in range(L.shape[1]):
                 fout.write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
                            fcode(U[i, j], source_format='free', standard=95) + "\n")
+    elif(srow == "#ODEVEC_RHS"):
+        for i in range(rhs.shape[0]):
+            fout.write("      rhs(i," + str(i + 1) + ") = " +
+                       fcode(rhs[i], source_format='free', standard=95) + "\n")
     else:
         srow = row.strip()
         fout.write(row)

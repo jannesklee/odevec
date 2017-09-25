@@ -548,9 +548,7 @@ contains
 
 !cdir nodep
     do i=1,this%nvector
-      rhs(i,1) = -0.04d0*y(i,1) + 1d4*y(i,2)*y(i,3)
-      rhs(i,2) = 0.04d0*y(i,1) - 3d7*y(i,2)*y(i,2) - 1d4*y(i,2)*y(i,3)
-      rhs(i,3) = 3d7*y(i,2)*y(i,2)
+#ODEVEC_RHS
     end do
   end subroutine CalcRHS
 
