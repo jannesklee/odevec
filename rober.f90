@@ -2,40 +2,39 @@ program rober
   use bdf_method_mod
 !#include "tap.h"
   implicit none
-  type(bdf_type) :: BDF
-  integer :: i, m
-  integer, parameter :: neq=3
-  integer, parameter :: nvector=256
-  integer, parameter :: rtol_start = 8, rtol_stop=28
-  double precision, dimension(nvector,neq) :: y
-  double precision :: t_start, t_stop, dt, start, finish, rtol, atol
+!  type(bdf_type) :: BDF
+  integer :: i, m, k
+  integer :: rtol_start=8, rtol_stop=28
+  double precision :: t_start, t_stop, start, finish
   real :: eps1 = 1e-4, eps2=1e-8, eps3=1e-4
   character (len=10) :: rtol_char
 
 
-  call InitBDF(BDF,nvector,neq,rtol,atol)
+  call InitBDF()
 
 !  TAP_PLAN(4*(rtol_stop-rtol_start+1))
 
   do m=rtol_start,rtol_stop
-    BDF%rtol = 10d0**(-2d0-m*0.25d0)      ! relative tolerance
-    BDF%atol = 1d-6*BDF%rtol              ! absolute tolerance
-
-    t_start = 0.0d0
-    t_stop  = 40d0
-    dt = 1d-6
-
-    do i=1,nvector
-      y(i,:) = (/ 1d0, 0d0, 0d0 /)
-    end do
+    rtol = 10d0**(-2d0-m*0.25d0)          ! relative tolerance
+    atol = 1d-6*rtol                      ! absolute tolerance
 
     call cpu_time(start)
+    do k=1,1
+      t_start = 0.0d0
+      t_stop  = 40d0
+      dt = 1d-6
 
-    call SolveODE_BDF(BDF, t_start, dt, t_stop, y)
+      do i=1,nvector
+        y(i,:) = (/ 1d0, 0d0, 0d0 /)
+      end do
 
+
+      call SolveODE_BDF(t_start, dt, t_stop, y)
+
+    end do
     call cpu_time(finish)
 
-    print *, BDF%rtol, BDF%atol, finish-start
+    print *, rtol, atol, (finish-start)/1d0
 
 !    ! check the solution
 !    write(rtol_char,'(F5.2)') log10(BDF%rtol)
@@ -47,6 +46,6 @@ program rober
 
 !  TAP_DONE
 
-  call CloseBDF(BDF)
+  call CloseBDF()
 
 end program rober
