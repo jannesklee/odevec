@@ -340,15 +340,16 @@ contains
 
 
   !> Calculates the error-weight of y for given tolerances
-  elemental subroutine CalcErrorWeightInvSquared(rtol,atol,y,inv_weight_2)
+  subroutine CalcErrorWeightInvSquared(rtol,atol,y,inv_weight_2)
     implicit none
     integer          :: i, j
-    double precision :: rtol, atol, y,inv_weight_2
+    double precision :: rtol, atol
+    double precision, dimension(nvector,neq) :: y, inv_weight_2
     intent(in)       :: rtol, atol, y
     intent(out)      :: inv_weight_2
 
-    inv_weight_2 = 1./(rtol*abs(y) + atol)
-    inv_weight_2 = inv_weight_2*inv_weight_2
+    inv_weight_2(:,:) = 1./(rtol*abs(y(:,:)) + atol)
+    inv_weight_2(:,:) = inv_weight_2(:,:)*inv_weight_2(:,:)
   end subroutine CalcErrorWeightInvSquared
 
 
