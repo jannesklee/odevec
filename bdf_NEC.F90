@@ -3,7 +3,8 @@ module bdf_method_mod
   implicit none
 
   integer, parameter :: nvector=256                       !> vector length
-  integer, parameter :: neq=3                             !> number equations
+  integer, parameter :: nrea=38                           !> vector length
+  integer, parameter :: neq=3                            !> number equations
   integer, parameter :: maxorder=5                        !> maximum order
   integer            :: iterator                          !> iterator
   integer            :: order                             !> current order
@@ -24,6 +25,7 @@ module bdf_method_mod
   double precision, pointer, dimension(:,:) :: coeff      !> coefficient matrix
   double precision, pointer, dimension(:,:) :: tautable   !> solution table for
                                                           !> precomputation
+  double precision, pointer, dimension(:,:,:) :: jac      !> jacobian
   double precision, pointer, dimension(:,:,:) :: L,U      !> lower, upper triangular matrix
   double precision, pointer, dimension(:,:,:) :: y_NS     !> Nordsieck history array
 
@@ -52,6 +54,7 @@ contains
               res(nvector,neq), &
               coeff(0:6,6), &
               tautable(maxorder+1,0:maxorder+1), &
+              jac(nvector,neq,neq), &
               L(nvector,neq,neq), &
               U(nvector,neq,neq), &
               y_NS(nvector,neq,0:maxorder+1), &
@@ -133,7 +136,11 @@ contains
 
     ! 1. initialization -------------------------------------------------------!
     ! use the LU matrices from the predictor value
-    call GetLU(coeff(1,order),y,dt,L,U)
+
+    call GetJac(coeff(1,order),y,dt,jac)
+    call LUDecompose(jac,L,U)
+
+!    call GetLU(coeff(1,order),y,dt,L,U)
 
     ! Calculate initial right hand side
     call CalcRHS(y,rhs)
@@ -206,7 +213,7 @@ contains
 
     ! advance in time
     t = t + dt
-!    print *, t, y(1,:)
+    print *, t, y(1,:)
 
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for current order+(0,-1,+1) -> use largest for next step
@@ -318,7 +325,6 @@ contains
   !> Calculates the weighted norm (two different interfaces for performance)
   pure function WeightedNorm1(en,inv_weight_2)
     implicit none
-    integer :: i, j
     double precision :: WeightedNorm1
     double precision, dimension(nvector,neq) :: en, inv_weight_2
     intent(in)       :: en, inv_weight_2
@@ -342,7 +348,6 @@ contains
   !> Calculates the error-weight of y for given tolerances
   subroutine CalcErrorWeightInvSquared(rtol,atol,y,inv_weight_2)
     implicit none
-    integer          :: i, j
     double precision :: rtol, atol
     double precision, dimension(nvector,neq) :: y, inv_weight_2
     intent(in)       :: rtol, atol, y
@@ -476,9 +481,70 @@ contains
   end subroutine SolveLU
 
 
+  !> Provides NOT the jacobian J but P = 1 - dt*beta*J
+  subroutine GetJac(beta,y,dt,jac)
+    implicit none
+    integer          :: i
+    double precision :: beta, dt
+    double precision, dimension(nvector,neq) :: y
+    double precision, dimension(nvector,neq,neq) :: jac
+    intent (in)      :: y, beta, dt
+    intent (out)     :: jac
+
+!cdir nodep
+    do i=1,nvector
+
+#ODEVEC_JAC
+
+    end do
+
+  end subroutine GetJac
+
+
+  !> Get L and U from Jacobian
+  subroutine LUDecompose(A,L,U)
+    implicit none
+    integer          :: i, j, k, m
+    double precision, dimension(nvector,neq,neq) :: A
+    double precision, dimension(nvector,neq,neq) :: L, U
+    intent (inout)      :: A
+    intent (out)     :: L, U
+
+    ! calculate L
+    do k=1,neq-1
+!cdir nodep
+      do j=k+1,neq
+        do i=1,nvector
+          L(i,j,k) = A(i,j,k)/A(i,k,k)
+        end do
+!cdir nodep
+        do m=k+1,neq
+          do i=1,nvector
+            A(i,j,m) = A(i,j,m)-L(i,j,k)*A(i,k,m)
+          end do
+        end do
+      end do
+    end do
+
+    do j=1,neq
+      do i=1,nvector
+        L(i,j,j) = 1.0
+      end do
+    end do
+
+    ! calculate U
+    do k=1,neq
+!cdir nodep
+      do j=1,k
+        do i=1,nvector
+          U(i,j,k) = A(i,j,k)
+        end do
+      end do
+    end do
+  end subroutine LUDecompose
+
+
   !> Provides the Matrices L and U
-  !!
-  !! \todo The Python preprocessor needs to include the code here
   subroutine GetLU(beta,y,dt,L,U)
     implicit none
     integer          :: i
