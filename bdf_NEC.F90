@@ -2,9 +2,8 @@
 module bdf_method_mod
   implicit none
 
-  integer, parameter :: nvector=256                       !> vector length
-  integer, parameter :: nrea=38                           !> vector length
-  integer, parameter :: neq=3                            !> number equations
+  integer, parameter :: nvector=1                         !> vector length
+  integer, parameter :: neq=3                             !> number equations
   integer, parameter :: maxorder=5                        !> maximum order
   integer            :: iterator                          !> iterator
   integer            :: order                             !> current order
@@ -122,6 +121,9 @@ contains
 
       iterator = iterator + 1
     end do
+
+    call InterpolateSolution(t,dt,t_stop,order,y_NS,y)
+    print *, t_stop, y(1,:)
   end subroutine
 
 
@@ -213,7 +215,6 @@ contains
 
     ! advance in time
     t = t + dt
-    print *, t, y(1,:)
 
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for current order+(0,-1,+1) -> use largest for next step
@@ -222,8 +223,8 @@ contains
     ! Adjust the Nordsieck history array with new step size & new order
     call SetStepSize(dt_scale,y_NS,dt)
     en_old = en
-  end subroutine SolveLinearSystem
 
+  end subroutine SolveLinearSystem
 
   !> Resets the whole system to the state where the predictor starts
   subroutine ResetSystem(dt_scale,dt,y_NS)
@@ -587,7 +588,6 @@ contains
 
   !> Example case for the right-hand-side
   !!
-  !! \todo needs to be done external later!
   !! This is for Robertson's example
   subroutine CalcRHS(y,rhs)
     implicit none
@@ -603,6 +603,25 @@ contains
     end do
   end subroutine CalcRHS
 
+  !> Interpolates solution at output time
+  !!
+  !! If an output is requested because \$ t > t_{\mathrm{out}} \$ the solution
+  !! is interpolated at the chosen output position. The interpolation is done
+  !! by Taylor series expansion, where Horner's rule is applied for efficiency.
+  subroutine InterpolateSolution(t,dt,t_out,order,y_NS,y)
+    double precision, dimension(nvector,neq,0:maxorder+1) :: y_NS
+    double precision, dimension(nvector,neq) :: y
+    double precision  :: t, t_out, rel_t, dt
+    integer           :: k, k_dot, order
+
+    ! Horner's rule
+    y(:,:) = y_NS(:,:,order)
+    rel_t = (t_out - t)/(dt)
+    do k = 1,order
+      k_dot = order - k
+      y(:,:) = y_NS(:,:,k_dot) + rel_t*y(:,:)
+    end do
+  end subroutine
 
   !> taufunction needed in several tests
   function tau(order,order2,coeff)
