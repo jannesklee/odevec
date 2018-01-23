@@ -1,4 +1,5 @@
 bdf
+bdf_NEC.f90
 *.swp
 *.o
 *.dat
