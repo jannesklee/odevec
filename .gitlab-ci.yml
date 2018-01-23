@@ -1,3 +1,7 @@
+services:
+    - python:latest
+    - particlekit/ubuntu-gfortran
+
 stages:
     - build
     - test
