@@ -10,7 +10,8 @@ build1:
         - gfortran -O2 -c -g -cpp -fcheck=all -fno-range-check -Wall -fbacktrace bdf_NEC.f90 rober.f90
         - gfortran -O2 -o bdf *.o
     cache:
-        bdf
+        paths:
+        - bdf
     only:
         - master
 
