@@ -3,18 +3,18 @@ stages:
     - test
     - deploy
 
-job1:
+build1:
     stage: build
     script:
         - python3 pre_odevec.py
         - gfortran -O2 -c -g -cpp -fcheck=all -fno-range-check -Wall -fbacktrace bdf_NEC.f90 rober.f90
         - gfortran -O2 -o bdf *.o
     cache:
-        untracked: true
+        bdf
     only:
         - master
 
-job2:
+test1:
     stage: test
     script:
         - ./bdf
