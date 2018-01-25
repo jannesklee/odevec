@@ -1,7 +1,3 @@
-services:
-    - python:latest
-    - particlekit/ubuntu-gfortran
-
 stages:
     - build
     - test
@@ -10,7 +6,7 @@ stages:
 job1:
     stage: build
     script:
-        - python pre_odevec.py
+        - python3 pre_odevec.py
         - gfortran -O2 -c -g -cpp -fcheck=all -fno-range-check -Wall -fbacktrace bdf_NEC.f90 rober.f90
         - gfortran -O2 -o bdf *.o
     only:
