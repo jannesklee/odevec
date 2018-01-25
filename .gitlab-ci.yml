@@ -11,3 +11,10 @@ job1:
         - gfortran -O2 -o bdf *.o
     only:
         - master
+
+job2:
+    stage: test
+    script:
+        - ./bdf
+    only:
+        - master
