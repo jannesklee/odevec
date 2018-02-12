@@ -16,8 +16,10 @@ import numpy as np
 #------------------------------------------------------------------------------#
 # primordial cooling
 
+nvector = 1
 neq = 12
-n_k = 38
+nrea = 38
+maxorder = 5
 
 idx_E=1
 idx_Hk=2
@@ -37,7 +39,7 @@ idx_Tgas=15
 idx_dummy=16
 
 y = symbols('y(i\,0:%d)'%(neq+1))
-k = symbols('k(i\,0:%d)'%(n_k+1))
+k = symbols('k(i\,0:%d)'%(nrea+1))
 
 rhs = Matrix([
     -k[1]*y[idx_H]*y[idx_E] +2.e0*k[1]*y[idx_H]*y[idx_E] -k[2]*y[idx_Hj]*y[idx_E]-k[3]*y[idx_Hj]*y[idx_E] -k[4]*y[idx_HE]*y[idx_E] +2.e0*k[4]*y[idx_HE]*y[idx_E] -k[5]*y[idx_HEj]*y[idx_E] -k[6]*y[idx_HEj]*y[idx_E] -k[7]*y[idx_HEj]*y[idx_E] +2.e0*k[7]*y[idx_HEj]*y[idx_E] -k[8]*y[idx_HEjj]*y[idx_E] -k[9]*y[idx_H]*y[idx_E] +k[10]*y[idx_Hk]*y[idx_H] +k[11]*y[idx_Hk]*y[idx_H] -k[16]*y[idx_H2]*y[idx_E] +k[16]*y[idx_H2]*y[idx_E] -k[18]*y[idx_Hk]*y[idx_E] +2.e0*k[18]*y[idx_Hk]*y[idx_E] +k[19]*y[idx_Hk]*y[idx_H] +k[20]*y[idx_Hk]*y[idx_H] +k[22]*y[idx_Hk]*y[idx_Hj] -k[23]*y[idx_H2j]*y[idx_E] -k[24]*y[idx_H2j]*y[idx_E] +k[37]*y[idx_D]*y[idx_Hk] -k[38]*y[idx_Dj]*y[idx_E],
@@ -74,40 +76,49 @@ if(np.shape(P)[0] < 5):
 # CompactStorageScheme()
 
 # write changes to file
-fh = open("odevec.F90")
-fout = open("odevec.f90", "w")
+fh_list = [open("odevec.F90"),open("odevec_commons.F90")]
+fout    = [open("odevec.f90","w"),open("odevec_commons.f90","w")]
 
-for row in fh:
-    srow = row.strip()
-    if(srow == "#ODEVEC_L"):
-        if(np.shape(P)[0] < 5):
-            for i in range(L.shape[0]):
-                for j in range(L.shape[1]):
-                    fout.write("      L(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                               fcode(L[i, j], source_format='free', standard=95) + "\n")
-    elif(srow == "#ODEVEC_U"):
-        if(np.shape(P)[0] < 5):
-            for i in range(U.shape[0]):
-                for j in range(U.shape[1]):
-                    fout.write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                               fcode(U[i, j], source_format='free', standard=95) + "\n")
-    elif(srow == "#ODEVEC_JAC"):
-        for i in range(jac.shape[0]):
-            for j in range(jac.shape[1]):
-                fout.write("      jac(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                           fcode(P[i, j], source_format='free', standard=95) + "\n")
-    elif(srow == "#ODEVEC_RHS"):
-        for i in range(rhs.shape[0]):
-            fout.write("      rhs(i," + str(i + 1) + ") = " +
-                       fcode(rhs[i], source_format='free', standard=95) + "\n")
-    elif(srow == "#ODEVEC_LU_PRESENT"):
-        if(np.shape(P)[0] < 5):
-            fout.write("      LOGICAL :: LU_PRESENT = .TRUE.")
-        else:
-            fout.write("      LOGICAL :: LU_PRESENT = .FALSE.")
-    else:
+for k,fh in enumerate(fh_list):
+    for row in fh:
         srow = row.strip()
-        fout.write(row)
+        if(srow == "#ODEVEC_L"):
+            if(np.shape(P)[0] < 5):
+                for i in range(L.shape[0]):
+                    for j in range(L.shape[1]):
+                        fout[k].write("      L(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                   fcode(L[i, j], source_format='free', standard=95) + "\n")
+        elif(srow == "#ODEVEC_U"):
+            if(np.shape(P)[0] < 5):
+                for i in range(U.shape[0]):
+                    for j in range(U.shape[1]):
+                        fout[k].write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                   fcode(U[i, j], source_format='free', standard=95) + "\n")
+        elif(srow == "#ODEVEC_JAC"):
+            for i in range(jac.shape[0]):
+                for j in range(jac.shape[1]):
+                    fout[k].write("      jac(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                               fcode(P[i, j], source_format='free', standard=95) + "\n")
+        elif(srow == "#ODEVEC_RHS"):
+            for i in range(rhs.shape[0]):
+                fout[k].write("      rhs(i," + str(i + 1) + ") = " +
+                           fcode(rhs[i], source_format='free', standard=95) + "\n")
+        elif(srow == "#ODEVEC_LU_PRESENT"):
+            if(np.shape(P)[0] < 5):
+                fout[k].write("      LOGICAL :: LU_PRESENT = .TRUE.")
+            else:
+                fout[k].write("      LOGICAL :: LU_PRESENT = .FALSE.")
+        elif(srow == "#ODEVEC_VECTORLENGTH"):
+            fout[k].write("      integer :: nvector=" + str(nvector) + "\n")
+        elif(srow == "#ODEVEC_EQUATIONS"):
+            fout[k].write("      integer :: neq=" + str(neq) + "\n")
+        elif(srow == "#ODEVEC_MAXORDER"):
+            fout[k].write("      integer :: maxorder=" + str(maxorder) + "\n")
+        elif(srow == "#ODEVEC_REACTIONS"):
+            fout[k].write("      integer :: nrea=" + str(nrea) + "\n")
+        else:
+            srow = row.strip()
+            fout[k].write(row)
 
 
 print("sparsity structure of P:")
