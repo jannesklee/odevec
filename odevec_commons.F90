@@ -17,8 +17,8 @@ module odevec_commons
     intent (out)     :: jac
 
     ! \todo remove again
-    k = 0.0d0
-    k = coe(this)
+!    k = 0.0d0
+!    k = coe(this)
 
 !cdir nodep
     do i=1,this%nvector
@@ -38,8 +38,12 @@ module odevec_commons
          intent(in)  :: y
     double precision, dimension(this%nvector,this%neq,this%neq), &
          intent(out) :: L,U
+    double precision, dimension(this%nvector,this%nrea) :: k
     double precision :: beta, dt
     integer          :: i
+
+!    k = 0.0d0
+!    k = coe(this)
 
 !cdir nodep
     do i=1,this%nvector
@@ -65,8 +69,8 @@ module odevec_commons
     intent (in)     :: y
     intent (out)    :: rhs
 
-    k = 0.0d0
-    k = coe(this)
+!    k = 0.0d0
+!    k = coe(this)
 
 !cdir nodep
     do i=1,this%nvector

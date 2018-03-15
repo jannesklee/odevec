@@ -14,6 +14,7 @@ module odevec_main
     double precision :: atol                                !> absolute tolerance
     double precision :: t                                   !> current time
     double precision :: dt                                  !> current timestep
+    double precision :: dt_min                              !> minimal timestep
     double precision, pointer, dimension(:,:) :: y          !> current solution
                                                             !> array | often y_NS(:,:,0)
     double precision, pointer, dimension(:,:) :: en         !> correction vector
@@ -42,7 +43,7 @@ contains
 
 
   !> Allocates all memory for bdf-solver
-  subroutine InitBDF(this)
+  subroutine InitOdevec(this)
     implicit none
     type(odevec) :: this
     integer      :: err, i, j
@@ -65,7 +66,7 @@ contains
               this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
               STAT=err)
     if (err.ne.0) then
-      print *, "Memory allocation error. BDF-Solver could not be intialized."
+      print *, "Memory allocation error. OdeVec could not be intialized."
       stop
     end if
 
@@ -85,11 +86,13 @@ contains
         this%tautable(i,j) = tau(i,j,this%coeff)
       end do
     end do
+
+    this%dt_min = 1e-10
   end subroutine
 
 
   !> deallocates all memory of the bdf-solver
-  subroutine CloseBDF(this)
+  subroutine CloseOdevec(this)
     implicit none
     type(odevec) :: this
     integer :: err
@@ -100,14 +103,14 @@ contains
                stat=err)
 
     if (err.ne.0) then
-      print *, "Memory deallocation error. BDF-Solver was not properly closed."
+      print *, "Memory deallocation error. OdeVec was not properly closed."
       stop
     end if
   end subroutine
 
 
   !> Main subroutine to be called from outside
-  subroutine SolveODE_BDF(this,time,dt,t_stop,y,GetRHS,GetJac,GetLU)
+  subroutine SolveODE(this,time,dt,t_stop,y,GetRHS,GetJac,GetLU)
     implicit none
     type(odevec) :: this
     external          :: GetRHS,GetJac,GetLU
@@ -140,7 +143,7 @@ contains
     double precision, dimension(this%nvector,this%neq) :: y
     double precision :: dt, t, dt_scale
     double precision :: conv_error, conv_rate, error
-    integer          :: conv_iterator, lte_iterator
+    integer          :: conv_iterator, conv_failed, lte_iterator
     logical          :: success, reset
     intent(inout)    :: y, dt, t
 
@@ -160,11 +163,12 @@ contains
 
 
     ! some initializations
-    this%den           = 0.0d0
+    this%den      = 0.0d0
     conv_rate     = 0.7d0
     conv_error    = 1d20
     lte_iterator  = 0
     conv_iterator = 0
+    conv_failed   = 0
 
     ! needed in order to calculate the weighted norm
     call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
@@ -178,9 +182,11 @@ contains
       call PredictSolution(this,this%y_NS,this%en)
       y(:,:) = this%y_NS(:,:,0)
 
+      conv_iterator = 0
       ! 3. corrector ----------------------------------------------------------!
-      corrector: do while (conv_error > this%tautable(this%order,this%order)/ &
-                                        (2d0*(this%order+2d0)))
+      corrector: do while ((conv_error > this%tautable(this%order,this%order)/ &
+                                        (2d0*(this%order+2d0))) .or. &
+                           (conv_iterator .eq. 0))
         ! calculates residuum
         call CalcResiduum(this,GetRHS,y,dt,this%res)
 
@@ -196,13 +202,19 @@ contains
         ! times the step-size
         call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
                               conv_error,this%inv_weight_2,reset)
+
         conv_iterator = conv_iterator + 1
         if (reset) then
           dt_scale = 0.25
+          conv_failed = conv_failed + 1
+          if (conv_failed .gt. 10) stop
+          conv_iterator = 0
           call ResetSystem(this,dt_scale,dt,this%y_NS)
+          if (dt .lt. this%dt_min) stop
           cycle predictor
         end if
       end do corrector
+      conv_failed = 0
 
       ! local truncation error test:
       ! checks if solution is good enough and, similar to the convergence
@@ -212,6 +224,7 @@ contains
       if (error > 1d0) then
         dt_scale = 0.2
         call ResetSystem(this,dt_scale,dt,this%y_NS)
+        if (dt .lt. this%dt_min) stop
         lte_iterator = lte_iterator + 1
         cycle predictor
       else
@@ -226,7 +239,7 @@ contains
     t = t + dt
 
     ! 4. step-size/order control ----------------------------------------------!
-    ! calc. step size for current order+(0,-1,+1) -> use largest for next step
+    ! calc. step size for order+(0,-1,+1) -> use largest for next step
     call CalcStepSizeOrder(this,dt_scale,this%order)
 
     ! Adjust the Nordsieck history array with new step size & new order
@@ -307,24 +320,25 @@ contains
 
 
   !> Calculates the error for convergence
-  subroutine CheckConvergence(this,iterator,conv_rate,den,error,inv_weight_2,reset)
+  subroutine CheckConvergence(this,iterator,conv_rate,den,conv_error,inv_weight_2,reset)
     implicit none
     type(odevec)     :: this
     integer          :: iterator
     logical          :: reset
-    double precision :: conv_rate, error_tmp, error
+    double precision :: conv_rate, conv_rate2, conv_error_tmp, conv_error
     double precision, dimension(this%nvector,this%neq) :: den, inv_weight_2
     intent(in)       :: den, inv_weight_2, iterator
-    intent(inout)    :: conv_rate, error, reset
+    intent(inout)    :: conv_rate, conv_error, reset
 
-    error_tmp = WeightedNorm(this,den,inv_weight_2)
-    conv_rate = max(0.2d0*conv_rate,error_tmp/error)
-    error = error_tmp*min(1d0,1.5d0*conv_rate)
+    conv_error_tmp = WeightedNorm(this,den,inv_weight_2)
+    conv_rate2 = conv_error_tmp/conv_error
+    conv_rate = max(0.2d0*conv_rate,conv_rate2)
+    conv_error = conv_error_tmp*min(1d0,1.5d0*conv_rate)
 
-    if (iterator == 2 .and. error > 2d0) then
+    if (iterator == 2 .and. conv_rate2 > 2d0) then
       reset = .TRUE.
     else if (iterator > 2 .and.  &
-            error > this%tautable(this%order,this%order)/(2d0*(this%order + 2d0))) then
+            conv_error > this%tautable(this%order,this%order)/(2d0*(this%order + 2d0))) then
       reset = .TRUE.
     else if (iterator > 3) then
       reset = .TRUE.

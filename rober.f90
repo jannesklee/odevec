@@ -1,50 +1,48 @@
 program rober
-  use bdf_method_mod
-!#include "tap.h"
+  use odevec_main
+  use odevec_commons
   implicit none
   integer :: i, m, k
-  integer :: rtol_start=20, rtol_stop=20
-  double precision :: t_start, t_stop, start, finish
+  type(odevec) :: ode
+  integer :: rtol_start=0, rtol_stop=0
+  double precision :: t_start, t_stop, start, finish,dt,t_step
   real :: eps1 = 1e-4, eps2=1e-8, eps3=1e-4
   character (len=10) :: rtol_char
 
 
-  call InitBDF()
-
-!  TAP_PLAN(4*(rtol_stop-rtol_start+1))
+  call InitOdevec(ode)
 
   do m=rtol_start,rtol_stop
-    rtol = 10d0**(-2d0-m*0.25d0)          ! relative tolerance
-    atol = 1d-6*rtol                      ! absolute tolerance
+    ode%rtol = 10d0**(-2d0-m*0.25d0)          ! relative tolerance
+    ode%atol = 1d-6*ode%rtol                  ! absolute tolerance
 
     call cpu_time(start)
     do k=1,1
       t_start = 0.0d0
-      t_stop  = 40d0
-      dt = 1d-6
+      t_stop  = 1d10
+      dt = 1d-5
 
-      do i=1,nvector
-        y(i,:) = (/ 1d0, 0d0, 0d0 /)
+      do i=1,ode%nvector
+        ode%y(i,:) = (/ 1d0, 0d0, 0d0 /)
       end do
 
-
-      call SolveODE_BDF(t_start, dt, t_stop, y)
+      t_step = 1d-4
+      print *, t_start, ode%y(1,:)
+      do while (t_stop  < 1e12)
+        t_stop = t_start + t_step
+        dt = 1d-6
+        call SolveODE(ode,t_start, dt, t_stop, ode%y,GetRHS,GetJac,GetLU)
+        t_start = t_start
+        t_step = t_step*1.3
+        print *, t_stop, ode%y(1,:)
+      end do
 
     end do
     call cpu_time(finish)
 
-    print *, rtol, atol, (finish-start)/1d0
-
-    ! check the solution
-    write(rtol_char,'(F5.2)') log10(rtol)
-!    TAP_CHECK_CLOSE(40.0,real(t_start),0.1, "ROBER - time, log(rtol):"//rtol_char)
-!    TAP_CHECK_CLOSE(0.71582657204273303,real(y(1,1)),eps1,"ROBER - y(1), log(rtol):"//rtol_char)
-!    TAP_CHECK_CLOSE(9.1855154650076860E-006,real(y(1,2)),eps2,"ROBER - y(2), log(rtol):"//rtol_char)
-!    TAP_CHECK_CLOSE(0.28416424223264120,real(y(1,3)),eps3,"ROBER - y(3), log(rtol):"//rtol_char)
+!    print *, ode%rtol, ode%atol, (finish-start)/1d0
   end do
 
-!  TAP_DONE
-
-  call CloseBDF()
+  call CloseOdevec(ode)
 
 end program rober

@@ -7,7 +7,7 @@ program primordial
   integer :: i, j
 
 
-  call InitBDF(ode)
+  call InitOdevec(ode)
 
   ode%rtol = 1e-4
   ode%atol = 1e-20
@@ -24,13 +24,13 @@ program primordial
   t_step = 1d7
   dt = 1d7
 
-  write (*,*) time, ode%y(:,3), ode%y(:,5)
+  write (*,*) time, ode%y(1,:)
   do while (time < 1e10)
     t_stop = time + t_step
 
-    call SolveODE_BDF(ode,time,dt,t_stop,ode%y,GetRHS,GetJac,GetLU)
+    call SolveODE(ode,time,dt,t_stop,ode%y,GetRHS,GetJac,GetLU)
 
-    write (*,*) time, ode%y(:,3), ode%y(:,5)
+    write (*,*) time, ode%y(1,:)
   end do
 
 
