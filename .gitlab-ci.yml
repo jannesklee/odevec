@@ -9,8 +9,8 @@ stages:
 build1:
     stage: build
     script:
-        - python3 pre_odevec.py
-        - gfortran -O2 -c -g -cpp -fcheck=all -fno-range-check -Wall -fbacktrace odevec.f90 odevec_commons.f90 primordial.f90
+        - python pre_odevec.py --nvector=32 --example="PRIMORDIAL"
+        - gfortran -O2 -c -g -cpp -DHAVE_COEFFICIENTS -fcheck=all -fno-range-check -Wall -fbacktrace odevec.f90 odevec_commons.f90 primordial.f90
         - gfortran -O2 -o primordial *.o
     artifacts:
         expire_in: 4 weeks
