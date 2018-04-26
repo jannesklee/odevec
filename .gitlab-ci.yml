@@ -16,13 +16,13 @@ build1:
     artifacts:
         expire_in: 4 weeks
         paths:
-        - primordial
+        - build/primordial
     only:
         - master
 
 test1:
     stage: test
     script:
-        - ./primordial
+        - ./build/primordial
     only:
         - master
