@@ -17,8 +17,10 @@ module odevec_commons
     intent (out)     :: jac
 
     ! \todo remove again
-!    k = 0.0d0
-!    k = coe(this)
+#ifdef HAVE_COEFFICIENTS
+    k = 0.0d0
+    k = coe(this)
+#endif
 
 !cdir nodep
     do i=1,this%nvector
@@ -42,8 +44,10 @@ module odevec_commons
     double precision :: beta, dt
     integer          :: i
 
-!    k = 0.0d0
-!    k = coe(this)
+#ifdef HAVE_COEFFICIENTS
+    k = 0.0d0
+    k = coe(this)
+#endif
 
 !cdir nodep
     do i=1,this%nvector
@@ -69,8 +73,10 @@ module odevec_commons
     intent (in)     :: y
     intent (out)    :: rhs
 
-!    k = 0.0d0
-!    k = coe(this)
+#ifdef HAVE_COEFFIENTS
+    k = 0.0d0
+    k = coe(this
+#endif
 
 !cdir nodep
     do i=1,this%nvector
