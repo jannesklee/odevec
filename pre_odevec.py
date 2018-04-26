@@ -1,151 +1,207 @@
 #!/usr/bin/env python
 
-from sympy import symbols, Matrix, eye, fcode, SparseMatrix, lambdify, nsimplify
+from sympy import symbols, Matrix, eye, zeros, fcode, SparseMatrix, lambdify, nsimplify
+from scipy import sparse
 import numpy as np
 import argparse
 
 # sympy part, calculate L and U
 
 
-def GetSystemToSolve():
-        # TODO need to include here a function which gets the rhs by the inserting krome
-        # krome file or directly by krome instead of by hand.
-        #------------------------------------------------------------------------------#
+def GetSystemToSolve(nvector,example):
+    # Define here the system that you wish to solve. Below is Robertsons examples.
+    # need to include here a function which gets the rhs by the inserting krome
+    # krome file or directly by krome instead of by hand.
+# General indices
+    nvector = nvector
+    print "vectorlength in OdeVec:", nvector
+    maxorder = 5
+
+    #------------------------------------------------------------------------------#
+    if (example=="ROBER"):
         # robertson's test
         neq = 3
-        nrea = 3
-        nvector=1
-        maxorder=5
-        k=1
         y = symbols('y(i\,1:%d)'%(neq+2))
+        k = 0
+        nrea = 0
 
         rhs = Matrix([-0.04*y[0]+1e4*y[1]*y[2],0.04*y[0]-3e7*y[1]*y[1]-1e4*y[1]*y[2],3e7*y[1]*y[1]])
+
+    elif (example=="PRIMORDIAL"):
+        # Primordial network with 16 different species
+        neq = 16
+        nrea = 38
+
+
+        idx_E = 1
+        idx_Hk = 2
+        idx_H = 3
+        idx_HE = 4
+        idx_H2 = 5
+        idx_D = 6
+        idx_HD = 7
+        idx_Hj = 8
+        idx_HEj = 9
+        idx_H2j = 10
+        idx_Dj = 11
+        idx_HEjj = 12
+        idx_CR = 13
+        idx_g = 14
+        idx_Tgas = 15
+        idx_dummy = 16
+
+        y = symbols('y(i\,0:%d)' % (neq + 1))
+        k = symbols('k(i\,0:%d)' % (nrea + 1))
+
+        # RHS of primordial network
+        rhs = Matrix([- k[1] * y[idx_H] * y[idx_E] + 2.e0 * k[1] * y[idx_H] * y[idx_E] - k[2] * y[idx_Hj] * y[idx_E] - k[3] * y[idx_Hj] * y[idx_E] - k[4] * y[idx_HE] * y[idx_E] + 2.e0 * k[4] * y[idx_HE] * y[idx_E] - k[5] * y[idx_HEj] * y[idx_E] - k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEj] * y[idx_E] + 2.e0 * k[7] * y[idx_HEj] * y[idx_E] - k[8] * y[idx_HEjj] * y[idx_E] - k[9] * y[idx_H] * y[idx_E] + k[10] * y[idx_Hk] * y[idx_H] + k[11] * y[idx_Hk] * y[idx_H] - k[16] * y[idx_H2] * y[idx_E] + k[16] * y[idx_H2] * y[idx_E] - k[18] * y[idx_Hk] * y[idx_E] + 2.e0 * k[18] * y[idx_Hk] * y[idx_E] + k[19] * y[idx_Hk] * y[idx_H] + k[20] * y[idx_Hk] * y[idx_H] + k[22] * y[idx_Hk] * y[idx_Hj] - k[23] * y[idx_H2j] * y[idx_E] - k[24] * y[idx_H2j] * y[idx_E] + k[37] * y[idx_D] * y[idx_Hk] - k[38] * y[idx_Dj] * y[idx_E], + k[9] * y[idx_H] * y[idx_E] - k[10] * y[idx_Hk] * y[idx_H] - k[11] * y[idx_Hk] * y[idx_H] - k[18] * y[idx_Hk] * y[idx_E] - k[19] * y[idx_Hk] * y[idx_H] - k[20] * y[idx_Hk] * y[idx_H] - k[21] * y[idx_Hk] * y[idx_Hj] - k[22] * y[idx_Hk] * y[idx_Hj] - k[25] * y[idx_H2j] * y[idx_Hk] - k[37] * y[idx_D] * y[idx_Hk], - k[1] * y[idx_H] * y[idx_E] + k[2] * y[idx_Hj] * y[idx_E] + k[3] * y[idx_Hj] * y[idx_E] - k[9] * y[idx_H] * y[idx_E] - k[10] * y[idx_Hk] * y[idx_H] - k[11] * y[idx_Hk] * y[idx_H] - k[12] * y[idx_H] * y[idx_Hj] - k[13] * y[idx_H] * y[idx_Hj] - k[14] * y[idx_H2j] * y[idx_H] + k[15] * y[idx_H2] * y[idx_Hj] + 2.e0 * k[16] * y[idx_H2] * y[idx_E] - k[17] * y[idx_H2] * y[idx_H] + 3.e0 * k[17] * y[idx_H2] * y[idx_H] + k[18] * y[idx_Hk] * y[idx_E] - k[19] * y[idx_Hk] * y[idx_H] + 2.e0 * k[19] * y[idx_Hk] * y[idx_H] - k[20] * y[idx_Hk] * y[idx_H] + 2.e0 * k[20] * y[idx_Hk] * y[idx_H] + 2.e0 * k[21] * y[idx_Hk] * y[idx_Hj] + 2.e0 * k[23] * y[idx_H2j] * y[idx_E] + 2.e0 * k[24] * y[idx_H2j] * y[idx_E] + k[25] * y[idx_H2j] * y[idx_Hk] - 3.e0 * k[26] * y[idx_H] * y[idx_H] * y[idx_H] + k[26] * y[idx_H] * y[idx_H] * y[idx_H] - 3.e0 * k[27] * y[idx_H] * y[idx_H] * y[idx_H] + k[27] * y[idx_H] * y[idx_H] * y[idx_H] - 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H] - 2.e0 * k[29] * y[idx_H2] * y[idx_H] * y[idx_H] + k[30] * y[idx_Hj] * y[idx_D] - k[31] * y[idx_H] * y[idx_Dj] + k[34] * y[idx_H2] * y[idx_D] + k[35] * y[idx_H2] * y[idx_D] - k[36] * y[idx_HD] * y[idx_H], - k[4] * y[idx_HE] * y[idx_E] + k[5] * y[idx_HEj] * y[idx_E] + k[6] * y[idx_HEj] * y[idx_E], + k[10] * y[idx_Hk] * y[idx_H] + k[11] * y[idx_Hk] * y[idx_H] + k[14] * y[idx_H2j] * y[idx_H] - k[15] * y[idx_H2] * y[idx_Hj] - k[16] * y[idx_H2] * y[idx_E] - k[17] * y[idx_H2] * y[idx_H] + k[25] * y[idx_H2j] * y[idx_Hk] + k[26] * y[idx_H] * y[idx_H] * y[idx_H] + k[27] * y[idx_H] * y[idx_H] * y[idx_H] - k[28] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H] - k[29] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[29] * y[idx_H2] * y[idx_H] * y[idx_H] - k[32] * y[idx_H2] * y[idx_Dj] + k[33] * y[idx_HD] * y[idx_Hj] - k[34] * y[idx_H2] * y[idx_D] - k[35] * y[idx_H2] * y[idx_D] + k[36] * y[idx_HD] * y[idx_H], - k[30] * y[idx_Hj] * y[idx_D] + k[31] * y[idx_H] * y[idx_Dj] - k[34] * y[idx_H2] * y[idx_D] - k[35] * y[idx_H2] * y[idx_D] + k[36] * y[idx_HD] * y[idx_H] - k[37] * y[idx_D] * y[idx_Hk] + k[38] * y[idx_Dj] * y[idx_E], + k[32] * y[idx_H2] * y[idx_Dj] - k[33] * y[idx_HD] * y[idx_Hj] + k[34] * y[idx_H2] * y[idx_D] + k[35] * y[idx_H2] * y[idx_D] - k[36] * y[idx_HD] * y[idx_H] + k[37] * y[idx_D] * y[idx_Hk], + k[1] * y[idx_H] * y[idx_E] - k[2] * y[idx_Hj] * y[idx_E] - k[3] * y[idx_Hj] * y[idx_E] - k[12] * y[idx_H] * y[idx_Hj] - k[13] * y[idx_H] * y[idx_Hj] + k[14] * y[idx_H2j] * y[idx_H] - k[15] * y[idx_H2] * y[idx_Hj] - k[21] * y[idx_Hk] * y[idx_Hj] - k[22] * y[idx_Hk] * y[idx_Hj] - k[30] * y[idx_Hj] * y[idx_D] + k[31] * y[idx_H] * y[idx_Dj] + k[32] * y[idx_H2] * y[idx_Dj] - k[33] * y[idx_HD] * y[idx_Hj], + k[4] * y[idx_HE] * y[idx_E] - k[5] * y[idx_HEj] * y[idx_E] - k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEj] * y[idx_E] + k[8] * y[idx_HEjj] * y[idx_E], + k[12] * y[idx_H] * y[idx_Hj] + k[13] * y[idx_H] * y[idx_Hj] - k[14] * y[idx_H2j] * y[idx_H] + k[15] * y[idx_H2] * y[idx_Hj] + k[22] * y[idx_Hk] * y[idx_Hj] - k[23] * y[idx_H2j] * y[idx_E] - k[24] * y[idx_H2j] * y[idx_E] - k[25] * y[idx_H2j] * y[idx_Hk], + k[30] * y[idx_Hj] * y[idx_D] - k[31] * y[idx_H] * y[idx_Dj] - k[32] * y[idx_H2] * y[idx_Dj] + k[33] * y[idx_HD] * y[idx_Hj] - k[38] * y[idx_Dj] * y[idx_E], + k[7] * y[idx_HEj] * y[idx_E] - k[8] * y[idx_HEjj] * y[idx_E], 0.0, 0.0, 0.0, 0.0])
         #------------------------------------------------------------------------------#
-        # primordial cooling
-#        nvector = 256
-#        neq = 16
-#        nrea = 38
-#        maxorder = 5
-#
-#        idx_E=1
-#        idx_Hk=2
-#        idx_H=3
-#        idx_HE=4
-#        idx_H2=5
-#        idx_D=6
-#        idx_HD=7
-#        idx_Hj=8
-#        idx_HEj=9
-#        idx_H2j=10
-#        idx_Dj=11
-#        idx_HEjj=12
-#        idx_CR=13
-#        idx_g=14
-#        idx_Tgas=15
-#        idx_dummy=16
-#
-#        y = symbols('y(i\,0:%d)'%(neq+1))
-#        k = symbols('k(i\,0:%d)'%(nrea+1))
-#
-#        rhs = Matrix([
-#            -k[1]*y[idx_H]*y[idx_E] +2.e0*k[1]*y[idx_H]*y[idx_E] -k[2]*y[idx_Hj]*y[idx_E]-k[3]*y[idx_Hj]*y[idx_E] -k[4]*y[idx_HE]*y[idx_E] +2.e0*k[4]*y[idx_HE]*y[idx_E] -k[5]*y[idx_HEj]*y[idx_E] -k[6]*y[idx_HEj]*y[idx_E] -k[7]*y[idx_HEj]*y[idx_E] +2.e0*k[7]*y[idx_HEj]*y[idx_E] -k[8]*y[idx_HEjj]*y[idx_E] -k[9]*y[idx_H]*y[idx_E] +k[10]*y[idx_Hk]*y[idx_H] +k[11]*y[idx_Hk]*y[idx_H] -k[16]*y[idx_H2]*y[idx_E] +k[16]*y[idx_H2]*y[idx_E] -k[18]*y[idx_Hk]*y[idx_E] +2.e0*k[18]*y[idx_Hk]*y[idx_E] +k[19]*y[idx_Hk]*y[idx_H] +k[20]*y[idx_Hk]*y[idx_H] +k[22]*y[idx_Hk]*y[idx_Hj] -k[23]*y[idx_H2j]*y[idx_E] -k[24]*y[idx_H2j]*y[idx_E] +k[37]*y[idx_D]*y[idx_Hk] -k[38]*y[idx_Dj]*y[idx_E],
-#            +k[9]*y[idx_H]*y[idx_E] -k[10]*y[idx_Hk]*y[idx_H] -k[11]*y[idx_Hk]*y[idx_H] -k[18]*y[idx_Hk]*y[idx_E] -k[19]*y[idx_Hk]*y[idx_H] -k[20]*y[idx_Hk]*y[idx_H] -k[21]*y[idx_Hk]*y[idx_Hj] -k[22]*y[idx_Hk]*y[idx_Hj] -k[25]*y[idx_H2j]*y[idx_Hk] -k[37]*y[idx_D]*y[idx_Hk],
-#            -k[1]*y[idx_H]*y[idx_E] +k[2]*y[idx_Hj]*y[idx_E] +k[3]*y[idx_Hj]*y[idx_E] -k[9]*y[idx_H]*y[idx_E] -k[10]*y[idx_Hk]*y[idx_H] -k[11]*y[idx_Hk]*y[idx_H] -k[12]*y[idx_H]*y[idx_Hj] -k[13]*y[idx_H]*y[idx_Hj] -k[14]*y[idx_H2j]*y[idx_H] +k[15]*y[idx_H2]*y[idx_Hj] +2.e0*k[16]*y[idx_H2]*y[idx_E] -k[17]*y[idx_H2]*y[idx_H] +3.e0*k[17]*y[idx_H2]*y[idx_H] +k[18]*y[idx_Hk]*y[idx_E] -k[19]*y[idx_Hk]*y[idx_H] +2.e0*k[19]*y[idx_Hk]*y[idx_H] -k[20]*y[idx_Hk]*y[idx_H] +2.e0*k[20]*y[idx_Hk]*y[idx_H] +2.e0*k[21]*y[idx_Hk]*y[idx_Hj] +2.e0*k[23]*y[idx_H2j]*y[idx_E] +2.e0*k[24]*y[idx_H2j]*y[idx_E] +k[25]*y[idx_H2j]*y[idx_Hk] -3.e0*k[26]*y[idx_H]*y[idx_H]*y[idx_H] +k[26]*y[idx_H]*y[idx_H]*y[idx_H] -3.e0*k[27]*y[idx_H]*y[idx_H]*y[idx_H] +k[27]*y[idx_H]*y[idx_H]*y[idx_H] -2.e0*k[28]*y[idx_H2]*y[idx_H]*y[idx_H] -2.e0*k[29]*y[idx_H2]*y[idx_H]*y[idx_H] +k[30]*y[idx_Hj]*y[idx_D] -k[31]*y[idx_H]*y[idx_Dj] +k[34]*y[idx_H2]*y[idx_D] +k[35]*y[idx_H2]*y[idx_D] -k[36]*y[idx_HD]*y[idx_H],
-#            -k[4]*y[idx_HE]*y[idx_E] +k[5]*y[idx_HEj]*y[idx_E] +k[6]*y[idx_HEj]*y[idx_E],
-#            +k[10]*y[idx_Hk]*y[idx_H] +k[11]*y[idx_Hk]*y[idx_H] +k[14]*y[idx_H2j]*y[idx_H] -k[15]*y[idx_H2]*y[idx_Hj] -k[16]*y[idx_H2]*y[idx_E] -k[17]*y[idx_H2]*y[idx_H] +k[25]*y[idx_H2j]*y[idx_Hk] +k[26]*y[idx_H]*y[idx_H]*y[idx_H] +k[27]*y[idx_H]*y[idx_H]*y[idx_H] -k[28]*y[idx_H2]*y[idx_H]*y[idx_H] +2.e0*k[28]*y[idx_H2]*y[idx_H]*y[idx_H] -k[29]*y[idx_H2]*y[idx_H]*y[idx_H] +2.e0*k[29]*y[idx_H2]*y[idx_H]*y[idx_H] -k[32]*y[idx_H2]*y[idx_Dj] +k[33]*y[idx_HD]*y[idx_Hj] -k[34]*y[idx_H2]*y[idx_D] -k[35]*y[idx_H2]*y[idx_D] +k[36]*y[idx_HD]*y[idx_H],
-#            -k[30]*y[idx_Hj]*y[idx_D] +k[31]*y[idx_H]*y[idx_Dj] -k[34]*y[idx_H2]*y[idx_D] -k[35]*y[idx_H2]*y[idx_D] +k[36]*y[idx_HD]*y[idx_H] -k[37]*y[idx_D]*y[idx_Hk] +k[38]*y[idx_Dj]*y[idx_E],
-#            +k[32]*y[idx_H2]*y[idx_Dj] -k[33]*y[idx_HD]*y[idx_Hj] +k[34]*y[idx_H2]*y[idx_D] +k[35]*y[idx_H2]*y[idx_D] -k[36]*y[idx_HD]*y[idx_H] +k[37]*y[idx_D]*y[idx_Hk],
-#            +k[1]*y[idx_H]*y[idx_E] -k[2]*y[idx_Hj]*y[idx_E] -k[3]*y[idx_Hj]*y[idx_E] -k[12]*y[idx_H]*y[idx_Hj] -k[13]*y[idx_H]*y[idx_Hj] +k[14]*y[idx_H2j]*y[idx_H] -k[15]*y[idx_H2]*y[idx_Hj] -k[21]*y[idx_Hk]*y[idx_Hj] -k[22]*y[idx_Hk]*y[idx_Hj] -k[30]*y[idx_Hj]*y[idx_D] +k[31]*y[idx_H]*y[idx_Dj] +k[32]*y[idx_H2]*y[idx_Dj] -k[33]*y[idx_HD]*y[idx_Hj],
-#            +k[4]*y[idx_HE]*y[idx_E] -k[5]*y[idx_HEj]*y[idx_E] -k[6]*y[idx_HEj]*y[idx_E] -k[7]*y[idx_HEj]*y[idx_E] +k[8]*y[idx_HEjj]*y[idx_E],
-#            +k[12]*y[idx_H]*y[idx_Hj] +k[13]*y[idx_H]*y[idx_Hj] -k[14]*y[idx_H2j]*y[idx_H] +k[15]*y[idx_H2]*y[idx_Hj] +k[22]*y[idx_Hk]*y[idx_Hj] -k[23]*y[idx_H2j]*y[idx_E] -k[24]*y[idx_H2j]*y[idx_E] -k[25]*y[idx_H2j]*y[idx_Hk],
-#            +k[30]*y[idx_Hj]*y[idx_D] -k[31]*y[idx_H]*y[idx_Dj] -k[32]*y[idx_H2]*y[idx_Dj] +k[33]*y[idx_HD]*y[idx_Hj] -k[38]*y[idx_Dj]*y[idx_E],
-#            +k[7]*y[idx_HEj]*y[idx_E] -k[8]*y[idx_HEjj]*y[idx_E],0.0,0.0,0.0,0.0
-#            ])
-        return [y,k,rhs,nvector,neq,nrea,maxorder]
+
+    return [y, rhs, nvector, neq, maxorder, nrea]
 
 # replaces the pragmas with fortran syntax
-def ReplacePragmas(L,U,fh_list,fout,maxsize):
-        for k,fh in enumerate(fh_list):
-            for row in fh:
-                srow = row.strip()
-                if(srow == "#ODEVEC_L"):
-                    if(np.shape(P)[0] < maxsize):
-                        for i in range(L.shape[0]):
-                            for j in range(L.shape[1]):
-                                fout[k].write("      L(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                                           fcode(L[i, j], source_format='free', standard=95) + "\n")
-                elif(srow == "#ODEVEC_U"):
-                    if(np.shape(P)[0] < maxsize):
-                        for i in range(U.shape[0]):
-                            for j in range(U.shape[1]):
-                                fout[k].write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                                           fcode(U[i, j], source_format='free', standard=95) + "\n")
-                elif(srow == "#ODEVEC_JAC"):
-                    for i in range(jac.shape[0]):
-                        for j in range(jac.shape[1]):
-                            fout[k].write("      jac(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                                       fcode(P[i, j], source_format='free', standard=95) + "\n")
-                elif(srow == "#ODEVEC_RHS"):
-                    for i in range(rhs.shape[0]):
-                        fout[k].write("      rhs(i," + str(i + 1) + ") = " +
-                                   fcode(rhs[i], source_format='free', standard=95) + "\n")
-                elif(srow == "#ODEVEC_LU_PRESENT"):
-                    if(np.shape(P)[0] < maxsize):
-                        fout[k].write("      LOGICAL :: LU_PRESENT = .TRUE.")
-                    else:
-                        fout[k].write("      LOGICAL :: LU_PRESENT = .FALSE.")
-                elif(srow == "#ODEVEC_VECTORLENGTH"):
-                    fout[k].write("      integer :: nvector=" + str(nvector) + "\n")
-                elif(srow == "#ODEVEC_COMMON_MODULE"):
-                    fout[k].write("      use" + "\n")
-                elif(srow == "#ODEVEC_EQUATIONS"):
-                    fout[k].write("      integer :: neq=" + str(neq) + "\n")
-                elif(srow == "#ODEVEC_MAXORDER"):
-                    fout[k].write("      integer :: maxorder=" + str(maxorder) + "\n")
-                elif(srow == "#ODEVEC_REACTIONS"):
-                    fout[k].write("      integer :: nrea=" + str(nrea) + "\n")
+
+
+def ReplacePragmas(fh_list, fout):
+    for k, fh in enumerate(fh_list):
+        for row in fh:
+            srow = row.strip()
+            if(srow == "#ODEVEC_L"):
+                if(np.shape(P)[0] < 5):
+                    for i in range(L.shape[0]):
+                        for j in range(L.shape[1]):
+                            fout[k].write("      L(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                          fcode(L[i, j], source_format='free', standard=95) + "\n")
+            elif(srow == "#ODEVEC_U"):
+                if(np.shape(P)[0] < 5):
+                    for i in range(U.shape[0]):
+                        for j in range(U.shape[1]):
+                            fout[k].write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                          fcode(U[i, j], source_format='free', standard=95) + "\n")
+            elif(srow == "#ODEVEC_JAC"):
+                for i in range(jac.shape[0]):
+                    for j in range(jac.shape[1]):
+                        fout[k].write("      jac(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                      fcode(P[i, j], source_format='free', standard=95) + "\n")
+            elif(srow == "#ODEVEC_RHS"):
+                for i in range(rhs.shape[0]):
+                    fout[k].write("      rhs(i," + str(i + 1) + ") = " +
+                                  fcode(rhs[i], source_format='free', standard=95) + "\n")
+            elif(srow == "#ODEVEC_LU_PRESENT"):
+                if(np.shape(P)[0] < 5):
+                    fout[k].write("      LOGICAL :: LU_PRESENT = .TRUE.")
                 else:
-                    srow = row.strip()
-                    fout[k].write(row)
+                    fout[k].write("      LOGICAL :: LU_PRESENT = .FALSE.")
+            elif(srow == "#ODEVEC_VECTORLENGTH"):
+                fout[k].write(
+                    "      integer :: nvector=" +
+                    str(nvector) +
+                    "\n")
+            elif(srow == "#ODEVEC_COMMON_MODULE"):
+                fout[k].write("      use" + "\n")
+            elif(srow == "#ODEVEC_EQUATIONS"):
+                fout[k].write("      integer :: neq=" + str(neq) + "\n")
+            elif(srow == "#ODEVEC_MAXORDER"):
+                fout[k].write(
+                    "      integer :: maxorder=" +
+                    str(maxorder) +
+                    "\n")
+            elif(srow == "#ODEVEC_REACTIONS"):
+                fout[k].write("      integer :: nrea=" + str(nrea) + "\n")
+            else:
+                srow = row.strip()
+                fout[k].write(row)
+
+
+def ReorderSystem(P):
+    # replace non-zero entries with ones for ordering algorithms in scipy
+    P1 = np.array(P.col_list())
+    P1[:, 2] = 1
+
+    data = P1[:, 2]
+    i = P1[:, 1]
+    j = P1[:, 0]
+
+    Psci = sparse.csc_matrix((data.astype(int), (i, j)))
+    # apply Cuthill-McKee-Algorithm
+    perm = sparse.csgraph.reverse_cuthill_mckee(Psci, symmetric_mode=False)
+
+    P_order = zeros(Psci.shape[0],Psci.shape[1])
+    for i in range(Psci.shape[0]):
+        for j in range(Psci.shape[1]):
+            P_order[i,j] = P[perm[i],perm[j]]
+
+    return [P_order,perm]
 
 
 # command line execution
 if __name__ == '__main__':
+    # parsing
+    parser = argparse.ArgumentParser(
+        description='Preprocessor for OdeVec. A vectorized ODE-solver built for high throughput.')
+    parser.add_argument(
+        '--solverfile',
+        default='odevec.F90',
+        help='path to the not preprocessed solver file')
+    parser.add_argument(
+        '--solverout',
+        default='odevec.f90',
+        help='path to the solver output file')
+    parser.add_argument(
+        '--commonfile',
+        default='odevec_commons.F90',
+        help='path to the not preprocessed common file')
+    parser.add_argument(
+        '--commonout',
+        default='odevec_commons.f90',
+        help='path to the output common file')
+    parser.add_argument(
+        '--nvector',
+        default=1,
+        type=int,
+        required=True,
+        help='set vector length for the solver')
+    parser.add_argument(
+        '--ordering',
+        default=None,
+        help='preorder algorithm with a common algorithm')
+    parser.add_argument(
+        '--example',
+        default="ROBER",
+        help='pre-defined networks to solve')
+    parser.add_argument(
+        '--maxsize',
+        default=5,
+        help='maximum size of the Jacobian, which should still be symbolically LU-decomposed')
+    args = parser.parse_args()
+
     # get right-hand-side
-    [y,k,rhs,nvector,neq,nrea,maxorder] = GetSystemToSolve()
+    [y, rhs, nvector, neq, maxorder, nrea] = GetSystemToSolve(args.nvector,example=args.example)
+
     # calculate jacobian
-    jac = nsimplify(SparseMatrix(rhs.jacobian(y)[:,1:]))
+    jac = nsimplify(SparseMatrix(rhs.jacobian(y)[:, 1:]))
     # calculate P (used within BDF-methods)
     dt, beta = symbols('dt beta')
     P = SparseMatrix(eye(neq) - dt * beta * jac)
 
-#    P = P[::-1,::-1]
+    # Reorder the system if chosen
+    if(args.ordering=="CMK"):
+        [P, perm] = ReorderSystem(P)
 
-    maxsize = 5
-
+    maxsize = args.maxsize
     # only run symbolic LU-decompostion if the system is not too large
-    L = P
-    U = P
     if(np.shape(P)[0] < maxsize):
-        L,U,_ = P.LUdecomposition()
-#        Piv,L,D,U = P.LUdecompositionFF()
-#        print(L.nnz())
+        #L,U,_ = P.LUdecomposition()
+        Piv, L, D, U = P.LUdecompositionFF()
 #        print(U.nnz())
-
-    # parsing
-    parser = argparse.ArgumentParser(description='Preprocessor for OdeVec. A vectorized ODE-solver built for high throughput.')
-    parser.add_argument('--solverfile', default='odevec.F90', help='path to the not preprocessed solver file')
-    parser.add_argument('--solverout', default='odevec.f90', help='path to the solver output file')
-    parser.add_argument('--commonfile', default='odevec_commons.F90', help='path to the not preprocessed common file')
-    parser.add_argument('--commonout', default='odevec_commons.f90', help='path to the output common file')
-    args = parser.parse_args()
+#        print(L.RL)
 
     # write changes to file
-    fh_list = [open(args.solverfile),open(args.commonfile)]
-    fout    = [open(args.solverout,"w"),open(args.commonout,"w")]
+    fh_list = [open(args.solverfile), open(args.commonfile)]
+    fout = [open(args.solverout, "w"), open(args.commonout, "w")]
 
     # search for pragmas and replace them with the correct
-    ReplacePragmas(L,U,fh_list,fout,maxsize)
+    ReplacePragmas(fh_list, fout)
 
     # some command line output
     print("sparsity structure of P:")
