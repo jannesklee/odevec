@@ -2,6 +2,7 @@
 
 from sympy import symbols, Matrix, eye, zeros, fcode, SparseMatrix, lambdify, nsimplify
 from scipy import sparse
+from shutil import copyfile
 import numpy as np
 import argparse
 
@@ -141,19 +142,19 @@ if __name__ == '__main__':
         description='Preprocessor for OdeVec. A vectorized ODE-solver built for high throughput.')
     parser.add_argument(
         '--solverfile',
-        default='odevec.F90',
+        default='src/odevec.F90',
         help='path to the not preprocessed solver file')
     parser.add_argument(
         '--solverout',
-        default='odevec.f90',
+        default='build/odevec.f90',
         help='path to the solver output file')
     parser.add_argument(
         '--commonfile',
-        default='odevec_commons.F90',
+        default='src/odevec_commons.F90',
         help='path to the not preprocessed common file')
     parser.add_argument(
         '--commonout',
-        default='odevec_commons.f90',
+        default='build/odevec_commons.f90',
         help='path to the output common file')
     parser.add_argument(
         '--nvector',
@@ -199,6 +200,11 @@ if __name__ == '__main__':
     # write changes to file
     fh_list = [open(args.solverfile), open(args.commonfile)]
     fout = [open(args.solverout, "w"), open(args.commonout, "w")]
+
+    if(args.example=="ROBER"):
+        copyfile("tests/rober.f90","build/test.f90")
+    elif(args.example=="PRIMORDIAL"):
+        copyfile("tests/primordial.f90","build/test.f90")
 
     # search for pragmas and replace them with the correct
     ReplacePragmas(fh_list, fout)

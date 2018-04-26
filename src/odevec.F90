@@ -207,10 +207,10 @@ contains
         if (reset) then
           dt_scale = 0.25
           conv_failed = conv_failed + 1
-          if (conv_failed .gt. 10) stop
+          !if (conv_failed .gt. 10) stop
           conv_iterator = 0
           call ResetSystem(this,dt_scale,dt,this%y_NS)
-          if (dt .lt. this%dt_min) stop
+          !if (dt .lt. this%dt_min) stop
           cycle predictor
         end if
       end do corrector
@@ -224,7 +224,7 @@ contains
       if (error > 1d0) then
         dt_scale = 0.2
         call ResetSystem(this,dt_scale,dt,this%y_NS)
-        if (dt .lt. this%dt_min) stop
+        !if (dt .lt. this%dt_min) stop
         lte_iterator = lte_iterator + 1
         cycle predictor
       else
