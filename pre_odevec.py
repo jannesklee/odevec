@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
 from sympy import symbols, Matrix, eye, zeros, fcode, SparseMatrix, lambdify, nsimplify
 from scipy import sparse
 from shutil import copyfile
@@ -13,9 +14,9 @@ def GetSystemToSolve(nvector,example):
     # Define here the system that you wish to solve. Below is Robertsons examples.
     # need to include here a function which gets the rhs by the inserting krome
     # krome file or directly by krome instead of by hand.
-# General indices
+    # General indices
     nvector = nvector
-    print "vectorlength in OdeVec:", nvector
+    print("Used vector length nvector:", nvector)
     maxorder = 5
 
     #------------------------------------------------------------------------------#
@@ -114,7 +115,7 @@ def ReplacePragmas(fh_list, fout):
                 fout[k].write(row)
 
 
-def ReorderSystem(P):
+def ReorderSystemCMK(P,y,rhs):
     # replace non-zero entries with ones for ordering algorithms in scipy
     P1 = np.array(P.col_list())
     P1[:, 2] = 1
@@ -128,15 +129,37 @@ def ReorderSystem(P):
     perm = sparse.csgraph.reverse_cuthill_mckee(Psci, symmetric_mode=False)
 
     P_order = zeros(Psci.shape[0],Psci.shape[1])
+    y_tmp = y
+    rhs_tmp = rhs
     for i in range(Psci.shape[0]):
         for j in range(Psci.shape[1]):
             P_order[i,j] = P[perm[i],perm[j]]
 
-    return [P_order,perm]
+    print("\nFinished reordering with CMK-Algorithm...")
+    print("Permutation list", perm, "\n")
 
+    return [P_order,y_tmp,rhs_tmp,perm]
+
+def ReorderSystemInvert(P,y,rhs):
+
+    perm = range(len(rhs))[::-1]
+
+    P_order = zeros(neq,neq)
+    rhs_order = rhs
+    y_order = y
+    for i in range(neq):
+        for j in range(neq):
+            P_order[i,j] = P[perm[i],perm[j]]
+
+    print("\nFinished reordering with simple inversed numbering...")
+    print("Permutation list", perm, "\n")
+    return [P_order,y_order,rhs_order,perm]
 
 # command line execution
 if __name__ == '__main__':
+    print("#----------------------------------------------#")
+    print("Running OdeVec Preprocessing")
+    print("#----------------------------------------------#")
     # parsing
     parser = argparse.ArgumentParser(
         description='Preprocessor for OdeVec. A vectorized ODE-solver built for high throughput.')
@@ -185,9 +208,11 @@ if __name__ == '__main__':
     dt, beta = symbols('dt beta')
     P = SparseMatrix(eye(neq) - dt * beta * jac)
 
-    # Reorder the system if chosen
+    # Reorder the system if chosen so
     if(args.ordering=="CMK"):
-        [P, perm] = ReorderSystem(P)
+        [P, y, rhs, perm] = ReorderSystemCMK(P,y,rhs)
+    if(args.ordering=="INVERT"):
+        [P, y, rhs, perm] = ReorderSystemInvert(P,y,rhs)
 
     maxsize = args.maxsize
     # only run symbolic LU-decompostion if the system is not too large
@@ -210,7 +235,7 @@ if __name__ == '__main__':
     ReplacePragmas(fh_list, fout)
 
     # some command line output
-    print("sparsity structure of P:")
+    print("Sparsity structure of P:")
     P.print_nonzero()
     if(np.shape(P)[0] < maxsize):
         print("sparsity structure of L:")
