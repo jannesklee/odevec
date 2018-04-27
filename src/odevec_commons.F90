@@ -85,6 +85,8 @@ module odevec_commons
   end subroutine GetRHS
 
 
+#ifdef HAVE_COEFFICIENTS
+  ! copied from krome as a test
   !compute reaction rates cm^3(n-1)/s
   function coe(this)
     implicit none
@@ -366,6 +368,7 @@ module odevec_commons
     !end if
 
   end function coe
+#endif
 
 end module odevec_commons
 
