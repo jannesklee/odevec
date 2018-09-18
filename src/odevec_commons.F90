@@ -10,8 +10,8 @@ module odevec_commons
     type(odevec)     :: this
     double precision :: beta, dt
     double precision, dimension(this%nvector,this%neq) :: y
-    double precision, dimension(this%nvector,this%neq,this%neq) :: jac
     double precision, dimension(this%nvector,this%nrea) :: k
+    type(smat)       :: jac
     integer          :: i
     intent (in)      :: y, beta, dt
     intent (out)     :: jac
@@ -39,7 +39,9 @@ module odevec_commons
     double precision, dimension(this%nvector,this%neq), &
          intent(in)  :: y
     double precision, dimension(this%nvector,this%neq,this%neq), &
-         intent(out) :: L,U
+         intent(out) :: L
+    double precision, dimension(this%nvector,this%neq,this%neq), &
+         intent(out) :: U
     double precision, dimension(this%nvector,this%nrea) :: k
     double precision :: beta, dt
     integer          :: i

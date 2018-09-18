@@ -2,11 +2,20 @@
 module odevec_main
   implicit none
 
+  type smat
+    integer, dimension(:) :: ind1
+    integer, dimension(:) :: ind2
+    double precision, dimension(:,:) :: values
+  end type smat
+
   type :: odevec
 #ODEVEC_VECTORLENGTH
 #ODEVEC_EQUATIONS
 #ODEVEC_REACTIONS
 #ODEVEC_MAXORDER
+#ODEVEC_NNZ
+#ODEVEC_NNZ_L
+#ODEVEC_NNZ_U
     integer :: iterator                                     !> iterator
     integer :: order                                        !> current order
 
@@ -27,8 +36,8 @@ module odevec_main
     double precision, pointer, dimension(:,:) :: coeff      !> coefficient matrix
     double precision, pointer, dimension(:,:) :: tautable   !> solution table for
                                                             !> precomputation
-    double precision, pointer, dimension(:,:,:) :: jac      !> jacobian
-    double precision, pointer, dimension(:,:,:) :: L,U      !> lower, upper triangular matrix
+    type(smat) :: jac                                       !> jacobian
+    type(smat) :: L,U                                       !> lower, upper triangular matrix
     double precision, pointer, dimension(:,:,:) :: y_NS     !> Nordsieck history array
 #ODEVEC_LU_PRESENT
 
@@ -39,8 +48,39 @@ module odevec_main
     module procedure WeightedNorm1, WeightedNorm2
   end interface
 
+!  ! overloading operation for sparse matrix operations
+!  interface operator (*)
+!    function sparsemult(smat1,vec1) result (vec2)
+!    type (smat),      intent(in) :: smat1
+!    double precision, intent(in), dimension(:,:) :: vec1
+!    double precision, dimension(:,:)  :: vec2
+!    end function sparsemult
+!  end interface
+
 contains
 
+!  function sparsemult(smat1,vec1)
+!    implicit none
+!    !do nothing
+!
+!    result
+!  end function sparsemult
+
+!  function sparseadd(smat1,smat2)
+!    implicit none
+!    type(smat), intent(in) :: smat1
+!
+!
+!  end function sparseadd
+
+  subroutine AllocSMat(smatrix,ind1,ind2,nnz)
+    implicit none
+    integer    :: ind1, ind2, nnz
+    type(smat) :: smatrix
+    allocate(smatrix%row_ptr(ind1)
+             smatrix%col_ind(ind2)
+             smatrix%values(this%nvector,nnz))
+  end subroutine
 
   !> Allocates all memory for bdf-solver
   subroutine InitOdevec(this)
@@ -60,15 +100,17 @@ contains
               this%res(this%nvector,this%neq), &
               this%coeff(0:6,6), &
               this%tautable(this%maxorder+1,0:this%maxorder+1), &
-              this%jac(this%nvector,this%neq,this%neq), &
-              this%L(this%nvector,this%neq,this%neq), &
-              this%U(this%nvector,this%neq,this%neq), &
               this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
               STAT=err)
     if (err.ne.0) then
       print *, "Memory allocation error. OdeVec could not be intialized."
       stop
     end if
+
+    ! This was for COO format
+!    call AllocSMat(this%jac,this%nnz,this%nnz,this%nnz)
+!    call AllocSmat(this%L,this%nnz_l,this%nnz_l,this%nnz_l)
+!    call AllocSmat(this%U,this%nnz_u,this%nnz_u,this%nnz_u)
 
     ! bdf-coefficient-matrix with Nordsieck representation
     this%coeff = reshape((/  &
@@ -149,7 +191,6 @@ contains
 
     ! 1. initialization -------------------------------------------------------!
     ! use the LU matrices from the predictor value
-
     if (this%LU_PRESENT) then
       call GetLU(this,this%coeff(1,this%order),y,dt,this%L,this%U)
     else
@@ -160,7 +201,6 @@ contains
     ! Calculate initial right hand side
     call GetRHS(this,y,this%rhs)
     this%y_NS(:,:,1) = dt*this%rhs(:,:)
-
 
     ! some initializations
     this%den      = 0.0d0
@@ -464,31 +504,23 @@ contains
   subroutine SolveLU(this,L,U,res,den)
     implicit none
     type(odevec)   :: this
-    double precision, dimension(this%nvector,this%neq,this%neq) :: L, U
-    double precision, dimension(this%nvector,this%neq)          :: res, den
+!    double precision, dimension(:,:,:) :: L
+!    double precision, dimension(:,:,:) :: U
+    type(smat)     :: L
+    type(smat)     :: U
+    double precision, dimension(:,:)   :: res, den
     integer        :: i,j,k
     intent(in)     :: L, U, res
     intent(out)    :: den
 
-!cdir collapse
-    do j=1,this%neq
-      do i=1,this%nvector
-        this%den_tmp(i,j) = 0.0
-      end do
-    end do
+    this%den_tmp(:,:) = 0.0
     ! lower system
-    do k = 1,this%neq,1
-      do j = 1,k-1
+    this%den_tmp(:,1) = res(:,1)
+    do j = 2,this%neq
 !cdir nodep
-        do i = 1,this%nvector
-          this%den_tmp(i,k) = this%den_tmp(i,k) + L(i,k,j)*this%den_tmp(i,j)
-        end do
-      end do
-!cdir nodep
-      do i = 1,this%nvector
-        this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
-        this%den_tmp(i,k) = this%den_tmp(i,k)/L(i,k,k)
-      end do
+      k1 = L%ial(j)
+      k2 = L%ial(j+1)-1
+      this%den_tmp(:,j) = res(:,j) - dotproduct(L(:,k1:k2),this%den_tmp(:,jal(k1:k2)))
     end do
 
     ! upper system
@@ -519,42 +551,52 @@ contains
     implicit none
     type(odevec)   :: this
     integer        :: i, j, k, m
-    double precision, dimension(this%nvector,this%neq,this%neq) :: A
-    double precision, dimension(this%nvector,this%neq,this%neq) :: L, U
+!    double precision, dimension(this%nvector,this%neq,this%neq) :: A
+!    double precision, dimension(this%nvector,this%neq,this%neq) :: L, U
+!    type(smat)     :: A
+!    type(smat)     :: L, U
+    double precision, dimension (this%nvector) :: alpha
     intent (inout) :: A
     intent (out)   :: L, U
 
-    ! calculate L
-    do k=1,this%neq-1
-!cdir nodep
-      do j=k+1,this%neq
-        do i=1,this%nvector
-          L(i,j,k) = A(i,j,k)/A(i,k,k)
-        end do
-!cdir nodep
-        do m=k+1,this%neq
-          do i=1,this%nvector
-            A(i,j,m) = A(i,j,m)-L(i,j,k)*A(i,k,m)
-          end do
-        end do
-      end do
-    end do
+!    do m=1,this%neq-1
+!      ! Berechnung L/alpha
+!      k1 = A%row_ptr(i)
+!      k2 = A%row_ptr(i+1)-1
+!      !alpha = A%
+!      do k=k1,k1
+!        j = A%col_index(k)
+!        ! in den anderen codes wird immer nur eine einzelne Zeiel geupdated, deswegen funktioniert das hier nicht
+!        A%values(:,j) = A%values(:,j) - alpha*A%values(:,k)
+!!      do j=k+1,this%neq
+!!        L(:,j,k) = A(:,j,k)/A(:,k,k)
+!!      end do
+!      end do
+!    end do
 
-    do j=1,this%neq
-      do i=1,this%nvector
-        L(i,j,j) = 1.0
-      end do
-    end do
-
-    ! calculate U
-    do k=1,this%neq
-!cdir nodep
-      do j=1,k
-        do i=1,this%nvector
-          U(i,j,k) = A(i,j,k)
-        end do
-      end do
-    end do
+!    ! calculate L
+!    do k=1,this%neq-1
+!!cdir nodep
+!      do j=k+1,this%neq
+!        L(:,j,k) = A(:,j,k)/A(:,k,k)
+!!cdir nodep
+!        do m=k+1,this%neq
+!          A(:,j,m) = A(:,j,m)-L(:,j,k)*A(:,k,m)
+!        end do
+!      end do
+!    end do
+!
+!    do j=1,this%neq
+!      L(:,j,j) = 1.0
+!    end do
+!
+!    ! calculate U
+!    do k=1,this%neq
+!!cdir nodep
+!      do j=1,k
+!        U(:,j,k) = A(:,j,k)
+!      end do
+!    end do
   end subroutine LUDecompose
 
 
