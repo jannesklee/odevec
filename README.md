@@ -1,6 +1,6 @@
 # OdeVec
 
-OdeVec is a special-purpose ode-solver. It solves many independent stiff equation systems
+OdeVec is a special-purpose ode-solver. It solves many stiff equation systems
 with relatively small Jacobians optimized on throughput. This is reached through vectorization and
 a Python pre-processor that prepares the stiff and sparse equation system symbolically and writes
 down the outcome in Fortran syntax in source-file templates.
@@ -35,3 +35,7 @@ Finally run
 
     ./primordial
 
+# Connection to krome
+
+In order to connect the solver to krome just copy *pre_odevec.py*, *src/odevec.F90* and *src/odevec_commons.F90* into the
+solver folder. The krome preprocessor is then calling the odevec preprocessor, when the right flags are used.
