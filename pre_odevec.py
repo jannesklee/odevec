@@ -107,25 +107,25 @@ def ReplacePragmas(fh_list, fout):
                                   fcode(rhs[i], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_LU_PRESENT"):
                 if(np.shape(P)[0] < 5):
-                    fout[k].write("      LOGICAL, PARAMETER :: LU_PRESENT = .TRUE.")
+                    fout[k].write("      logical :: LU_PRESENT = .TRUE.")
                 else:
-                    fout[k].write("      LOGICAL, PARAMETER :: LU_PRESENT = .FALSE.")
+                    fout[k].write("      logical :: LU_PRESENT = .FALSE.")
             elif(srow == "#ODEVEC_VECTORLENGTH"):
-                fout[k].write( "    integer, parameter :: nvector=" + str(nvector) + "\n")
+                fout[k].write( "    integer :: nvector=" + str(nvector) + "\n")
             elif(srow == "#ODEVEC_COMMON_MODULE"):
                 fout[k].write("      use" + "\n")
             elif(srow == "#ODEVEC_EQUATIONS"):
-                fout[k].write("    integer, parameter :: neq=" + str(neq) + "\n")
+                fout[k].write("    integer :: neq=" + str(neq) + "\n")
             elif(srow == "#ODEVEC_MAXORDER"):
-                fout[k].write("    integer, parameter :: maxorder=" + str(maxorder) + "\n")
+                fout[k].write("    integer :: maxorder=" + str(maxorder) + "\n")
             elif(srow == "#ODEVEC_NNZ"):
-                fout[k].write("    integer, parameter :: nnz=" + str(nnz) + "\n")
+                fout[k].write("    integer :: nnz=" + str(nnz) + "\n")
             elif(srow == "#ODEVEC_NNZ_L"):
-                fout[k].write("    integer, parameter :: nnz_l=" + str(nnz_l) + "\n")
+                fout[k].write("    integer :: nnz_l=" + str(nnz_l) + "\n")
             elif(srow == "#ODEVEC_NNZ_U"):
-                fout[k].write("    integer, parameter :: nnz_u=" + str(nnz_u) + "\n")
+                fout[k].write("    integer :: nnz_u=" + str(nnz_u) + "\n")
             elif(srow == "#ODEVEC_REACTIONS"):
-                fout[k].write("    integer, parameter :: nrea=" + str(nrea) + "\n")
+                fout[k].write("    integer :: nrea=" + str(nrea) + "\n")
             else:
                 srow = row.strip()
                 fout[k].write(row)
