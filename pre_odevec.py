@@ -73,13 +73,13 @@ def ReplacePragmas(fh_list, fout):
         for row in fh:
             srow = row.strip()
             if(srow == "#ODEVEC_L"):
-                if(np.shape(P)[0] < 5):
+                if(np.shape(P)[0] < args.maxsize):
                     for i in range(L.shape[0]):
                         for j in range(L.shape[1]):
                             fout[k].write("      L(i," + str(i + 1) + "," + str(j + 1) + ") = " +
                                           fcode(L[i, j], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_U"):
-                if(np.shape(P)[0] < 5):
+                if(np.shape(P)[0] < args.maxsize):
                     for i in range(U.shape[0]):
                         for j in range(U.shape[1]):
                             fout[k].write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
@@ -106,7 +106,7 @@ def ReplacePragmas(fh_list, fout):
                     fout[k].write("      rhs(i," + str(i + 1) + ") = " +
                                   fcode(rhs[i], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_LU_PRESENT"):
-                if(np.shape(P)[0] < 5):
+                if(np.shape(P)[0] < args.maxsize):
                     fout[k].write("      logical :: LU_PRESENT = .TRUE.")
                 else:
                     fout[k].write("      logical :: LU_PRESENT = .FALSE.")
@@ -234,6 +234,7 @@ if __name__ == '__main__':
         help='Set the number of non-zeroes of the U matrix. If not set the preprocessor will evaluate the nonzeroes on its own, which might take some time.')
     parser.add_argument(
         '--maxsize',
+        type=int,
         default=5,
         help='maximum size of the Jacobian, which should still be symbolically LU-decomposed')
     parser.add_argument(
