@@ -17,6 +17,7 @@ module odevec_main
     double precision :: dt_min                              !> minimal timestep
     double precision, pointer, dimension(:,:) :: y          !> current solution
                                                             !> array | often y_NS(:,:,0)
+    integer         , pointer, dimension(:)   :: Piv        !> pivoting vector
     double precision, pointer, dimension(:,:) :: en         !> correction vector
     double precision, pointer, dimension(:,:) :: en_old     !> old corr. vector
     double precision, pointer, dimension(:,:) :: den        !> corrector of en
@@ -27,8 +28,8 @@ module odevec_main
     double precision, pointer, dimension(:,:) :: coeff      !> coefficient matrix
     double precision, pointer, dimension(:,:) :: tautable   !> solution table for
                                                             !> precomputation
-    double precision, pointer, dimension(:,:,:) :: jac      !> jacobian
-    double precision, pointer, dimension(:,:,:) :: L,U      !> lower, upper triangular matrix
+    double precision, pointer, dimension(:,:,:) :: LU       !> LU matrix, also jacobian
+                                                            !! shortly (in-situ replace)
     double precision, pointer, dimension(:,:,:) :: y_NS     !> Nordsieck history array
 #ODEVEC_LU_PRESENT
 
@@ -51,6 +52,7 @@ contains
     ! allocate fields
     allocate( &
               this%y(this%nvector,this%neq), &
+              this%Piv(this%neq), &
               this%en(this%nvector,this%neq), &
               this%en_old(this%nvector,this%neq), &
               this%den(this%nvector,this%neq), &
@@ -60,9 +62,7 @@ contains
               this%res(this%nvector,this%neq), &
               this%coeff(0:6,6), &
               this%tautable(this%maxorder+1,0:this%maxorder+1), &
-              this%jac(this%nvector,this%neq,this%neq), &
-              this%L(this%nvector,this%neq,this%neq), &
-              this%U(this%nvector,this%neq,this%neq), &
+              this%LU(this%nvector,this%neq,this%neq), &
               this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
               STAT=err)
     if (err.ne.0) then
@@ -98,8 +98,8 @@ contains
     integer :: err
 
     deallocate(this%y,this%en,this%en_old,this%den,this%den_tmp,this%inv_weight_2, &
-               this%rhs,this%res,this%coeff,this%tautable,this%jac, &
-               this%L,this%U,this%y_NS, &
+               this%rhs,this%res,this%coeff,this%tautable,this%LU, &
+               this%y_NS, &
                stat=err)
 
     if (err.ne.0) then
@@ -134,7 +134,6 @@ contains
     call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y)
   end subroutine
 
-
   !> Solves a linear system for a given timestep
   subroutine SolveLinearSystem(this,t,dt,y,GetRHS,GetJac,GetLU)
     implicit none
@@ -142,6 +141,7 @@ contains
     external          :: GetRHS,GetJac,GetLU
     double precision, dimension(this%nvector,this%neq) :: y
     double precision :: dt, t, dt_scale
+    integer          :: i,j,k
     double precision :: conv_error, conv_rate, error
     integer          :: conv_iterator, conv_failed, lte_iterator
     logical          :: success, reset
@@ -149,18 +149,16 @@ contains
 
     ! 1. initialization -------------------------------------------------------!
     ! use the LU matrices from the predictor value
-
     if (this%LU_PRESENT) then
-      call GetLU(this,this%coeff(1,this%order),y,dt,this%L,this%U)
+      call GetLU(this,this%coeff(1,this%order),y,dt,this%LU)
     else
-      call GetJac(this,this%coeff(1,this%order),y,dt,this%jac)
-      call LUDecompose(this,this%jac,this%L,this%U)
+      call GetJac(this,this%coeff(1,this%order),y,dt,this%LU)
+      call LUDecompose(this,this%LU,this%Piv)
     end if
 
     ! Calculate initial right hand side
     call GetRHS(this,y,this%rhs)
     this%y_NS(:,:,1) = dt*this%rhs(:,:)
-
 
     ! some initializations
     this%den      = 0.0d0
@@ -191,7 +189,7 @@ contains
         call CalcResiduum(this,GetRHS,y,dt,this%res)
 
         ! calculates the solution for dy with given residuum
-        call SolveLU(this,this%L,this%U,this%res,this%den)
+        call SolveLU(this,this%LU,this%Piv,this%res,this%den)
 
         ! add correction to solution vector
         this%en(:,:) = this%en(:,:) + this%den(:,:)
@@ -461,13 +459,14 @@ contains
 
 
   !> Solve the System \f$ LU x=r \f$ with residuum r (res) and return x (den)
-  subroutine SolveLU(this,L,U,res,den)
+  subroutine SolveLU(this,LU,Piv,res,den)
     implicit none
     type(odevec)   :: this
-    double precision, dimension(this%nvector,this%neq,this%neq) :: L, U
+    double precision, dimension(this%nvector,this%neq,this%neq) :: LU
     double precision, dimension(this%nvector,this%neq)          :: res, den
+    integer         , dimension(this%neq)                       :: Piv
     integer        :: i,j,k
-    intent(in)     :: L, U, res
+    intent(in)     :: LU,Piv,res
     intent(out)    :: den
 
 !cdir collapse
@@ -481,13 +480,13 @@ contains
       do j = 1,k-1
 !cdir nodep
         do i = 1,this%nvector
-          this%den_tmp(i,k) = this%den_tmp(i,k) + L(i,k,j)*this%den_tmp(i,j)
+          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,Piv(k),j)*this%den_tmp(i,j)
         end do
       end do
 !cdir nodep
       do i = 1,this%nvector
         this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
-        this%den_tmp(i,k) = this%den_tmp(i,k)/L(i,k,k)
+        this%den_tmp(i,k) = this%den_tmp(i,k)!/LU(i,Piv(k),k)
       end do
     end do
 
@@ -502,56 +501,49 @@ contains
       do j = k+1,this%neq
 !cdir nodep
         do i = 1,this%nvector
-          den(i,k) = den(i,k) + U(i,k,j)*den(i,j)
+          den(i,k) = den(i,k) + LU(i,Piv(k),j)*den(i,j)
         end do
       end do
 !cdir nodep
       do i = 1,this%nvector
         den(i,k) = this%den_tmp(i,k) - den(i,k)
-        den(i,k) = den(i,k)/U(i,k,k)
+        den(i,k) = den(i,k)/LU(i,Piv(k),k)
       end do
     end do
   end subroutine SolveLU
 
 
-  !> Get L and U from Jacobian
-  subroutine LUDecompose(this,A,L,U)
+  !> Get L and U from Jacobian (in-place transformation)
+  !!
+  !! Based on dgetrf from LAPACK. LU-decomposition with partial pivoting. Taken
+  !! and modified from https://rosettacode.org/wiki/LU_decomposition#Fortran.
+  subroutine LUDecompose(this,A,P)
     implicit none
     type(odevec)   :: this
-    integer        :: i, j, k, m
+    integer        :: i, j, k, m, kmax
     double precision, dimension(this%nvector,this%neq,this%neq) :: A
-    double precision, dimension(this%nvector,this%neq,this%neq) :: L, U
+    integer,          dimension(this%neq) :: P
+    integer,          dimension(2) :: maxloc_ij
     intent (inout) :: A
-    intent (out)   :: L, U
+    intent (out)   :: p
 
-    ! calculate L
-    do k=1,this%neq-1
-!cdir nodep
-      do j=k+1,this%neq
-        do i=1,this%nvector
-          L(i,j,k) = A(i,j,k)/A(i,k,k)
+    ! initialize P
+    P = [(i, i=1, this%neq)]
+    do k = 1,this%neq-1
+      maxloc_ij(:) = maxloc(abs(A(:,P(k:),k)))
+      kmax = maxloc_ij(2) + k - 1
+      if (kmax /= k ) P([k, kmax]) = P([kmax, k])
+      do j = k+1,this%neq
+        do i = 1,this%nvector
+          A(i,P(j),k) = A(i,P(j),k) / A(i,P(k),k)
         end do
+      end do
+      do j = k+1,this%neq
+        do m = k+1,this%neq
 !cdir nodep
-        do m=k+1,this%neq
-          do i=1,this%nvector
-            A(i,j,m) = A(i,j,m)-L(i,j,k)*A(i,k,m)
+          do i = 1,this%nvector
+            A(i,P(m),j) = A(i,P(m),j) - A(i,P(m),k) * A(i,P(k),j)
           end do
-        end do
-      end do
-    end do
-
-    do j=1,this%neq
-      do i=1,this%nvector
-        L(i,j,j) = 1.0
-      end do
-    end do
-
-    ! calculate U
-    do k=1,this%neq
-!cdir nodep
-      do j=1,k
-        do i=1,this%nvector
-          U(i,j,k) = A(i,j,k)
         end do
       end do
     end do

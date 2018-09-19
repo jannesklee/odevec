@@ -33,13 +33,13 @@ module odevec_commons
 
 
   !> Provides the Matrices L and U
-  subroutine GetLU(this,beta,y,dt,L,U)
+  subroutine GetLU(this,beta,y,dt,LU)
     implicit none
     type(odevec), intent(in) :: this
     double precision, dimension(this%nvector,this%neq), &
          intent(in)  :: y
     double precision, dimension(this%nvector,this%neq,this%neq), &
-         intent(out) :: L,U
+         intent(out) :: LU
     double precision, dimension(this%nvector,this%nrea) :: k
     double precision :: beta, dt
     integer          :: i
@@ -369,6 +369,21 @@ module odevec_commons
 
   end function coe
 #endif
+
+  subroutine PrintMatrix(message,a)
+    character(*), intent(in) :: message
+    class    (*), intent(in) :: a(:,:,:)
+    integer                  :: i
+    print*,' '
+    print*, message
+    do i=1,size(a,2)
+      select type (a)
+        type is (real(8)) ; print'(100d12.2)',a(1,i,:)
+        type is (integer) ; print'(100i12  )',a(1,i,:)
+      end select
+    end do
+    print*,' '
+  end subroutine
 
 end module odevec_commons
 
