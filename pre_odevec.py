@@ -247,7 +247,8 @@ if __name__ == '__main__':
     [y, rhs, nvector, neq, maxorder, nrea] = GetSystemToSolve(args.nvector,example=args.example)
 
     # calculate jacobian
-    jac = nsimplify(SparseMatrix(rhs.jacobian(y)[:, 1:]))
+    jac = rhs.jacobian(y[:-1])
+
     # calculate P (used within BDF-methods)
     dt, beta = symbols('dt beta')
     P = SparseMatrix(eye(neq) - dt * beta * jac)

@@ -3,7 +3,7 @@ program rober
   use odevec_commons
   implicit none
   integer            :: i, m, k
-  integer            :: rtol_start=14, rtol_stop=14
+  integer            :: rtol_start=24, rtol_stop=24
   type(odevec)       :: ode
   double precision   :: t_start, t_stop, start, finish,dt,t_step
   real               :: eps1 = 1e-4, eps2=1e-8, eps3=1e-4
@@ -29,7 +29,7 @@ program rober
 
     t_step = 1d-10
     print *, t_start, ode%y(1,:)
-    do while (t_stop  < 40e0)
+    do while (t_stop  < 1e11)
       t_stop = t_start + t_step
       dt = 1d-10
       call SolveODE(ode,t_start, dt, t_stop, ode%y,GetRHS,GetJac,GetLU)
