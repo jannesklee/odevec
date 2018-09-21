@@ -9,6 +9,7 @@ module odevec_main
 #ODEVEC_MAXORDER
     integer :: iterator                                     !> iterator
     integer :: order                                        !> current order
+!    integer :: successes, necessary_successes
 
     double precision :: rtol                                !> relative tolerance
     double precision :: atol                                !> absolute tolerance
@@ -163,10 +164,12 @@ contains
     ! some initializations
     this%den      = 0.0d0
     conv_rate     = 0.7d0
-    conv_error    = 1d20
+    conv_error    = HUGE(1d0)
     lte_iterator  = 0
     conv_iterator = 0
     conv_failed   = 0
+!    this%successes     = 0
+!    this%necessary_successes = this%order + 1
 
     ! needed in order to calculate the weighted norm
     call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
@@ -205,10 +208,10 @@ contains
         if (reset) then
           dt_scale = 0.25
           conv_failed = conv_failed + 1
-          !if (conv_failed .gt. 10) stop
+          if (conv_failed .gt. 10) stop
           conv_iterator = 0
           call ResetSystem(this,dt_scale,dt,this%y_NS)
-          !if (dt .lt. this%dt_min) stop
+          if (dt .lt. this%dt_min) stop
           cycle predictor
         end if
       end do corrector
@@ -227,6 +230,7 @@ contains
         cycle predictor
       else
         success = .TRUE.
+!        this%successes = this%successes + 1
       end if
     end do predictor
 
@@ -236,12 +240,17 @@ contains
     ! advance in time
     t = t + dt
 
+!    if (this%successes .ge. this%necessary_successes) then
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for order+(0,-1,+1) -> use largest for next step
     call CalcStepSizeOrder(this,dt_scale,this%order)
 
     ! Adjust the Nordsieck history array with new step size & new order
     call SetStepSize(this,dt_scale,this%y_NS,dt)
+
+!    this%necessary_successes = this%order + 1
+!    this%successes = 0
+!    end if
     this%en_old = this%en
   end subroutine SolveLinearSystem
 
