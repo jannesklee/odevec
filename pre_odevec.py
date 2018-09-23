@@ -212,7 +212,6 @@ if __name__ == '__main__':
         help='preorder algorithm with a common algorithm')
     parser.add_argument(
         '--example',
-        default="PRIMORDIAL",
         help='pre-defined networks to solve')
     parser.add_argument(
         '--packaging',
