@@ -25,13 +25,15 @@ PRogram primordial
   t0 = 0.0d0
   time = t0
   t_step = 1d8
-  dt = 1d-10
+  dt = 1d8*1e-6
+  t_stop = time + t_step
 
   write (*,*) time, ode%y(1,:)
   do while (time < 1e10)
-    t_stop = time + t_step
 
     call SolveODE(ode,time,dt,t_stop,ode%y,GetRHS,GetJac,GetLU)
+
+    t_stop = t_stop + t_step
 
     write (*,*) time, ode%y(1,:)
   end do
