@@ -73,9 +73,9 @@ module odevec_commons
     intent (in)     :: y
     intent (out)    :: rhs
 
-#ifdef HAVE_COEFFIENTS
+#ifdef HAVE_COEFFICIENTS
     k = 0.0d0
-    k = coe(this
+    k = coe(this)
 #endif
 
 !cdir nodep
