@@ -11,8 +11,8 @@ PRogram primordial
 
   call InitOdevec(ode)
 
-  ode%rtol = 1d-4
-  ode%atol = 1d-20
+  ode%rtol = 1d-8
+  ode%atol = 1d-30
   ode%dt_min = 1d-20
 
   ! initialization
@@ -25,7 +25,7 @@ PRogram primordial
   t0 = 0.0d0
   time = t0
   t_step = 1d8
-  dt = 1d8*1e-6
+  dt = t_step*1e-6
   t_stop = time + t_step
 
   write (*,*) time, ode%y(1,:)

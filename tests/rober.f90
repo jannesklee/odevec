@@ -28,12 +28,12 @@ program rober
     end do
 
     t_step = 1d-10
+    t_stop = t_step
     print *, t_start, ode%y(1,:)
     do while (t_stop  < 1e11)
-      t_stop = t_start + t_step
       dt = 1d-10
       call SolveODE(ode,t_start, dt, t_stop, ode%y,GetRHS,GetJac,GetLU)
-      t_step = t_step*1.3
+      t_stop = t_stop*1d1
       print *, t_stop, ode%y(1,:)
     end do
     call cpu_time(finish)
