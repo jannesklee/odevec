@@ -39,12 +39,12 @@ PRogram primordial
   end do
   call cpu_time(finish)
 
-  print *,
+  print *, ""
   print *, "#-------------------------------------------------------#"
   print *, "simulation time:", (finish-start)/1d0
   print *, "used tolerances (rel.,abs.):", ode%rtol, ode%atol
   print *, "#-------------------------------------------------------#"
-  print *,
+  print *, ""
 
 
   call CloseOdevec(ode)

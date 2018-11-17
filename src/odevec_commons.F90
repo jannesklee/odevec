@@ -22,7 +22,7 @@ module odevec_commons
     k = coe(this)
 #endif
 
-!cdir nodep
+!NEC$ ivdep
     do i=1,this%nvector
 
 #ODEVEC_JAC
@@ -49,7 +49,7 @@ module odevec_commons
     k = coe(this)
 #endif
 
-!cdir nodep
+!NEC$ ivdep
     do i=1,this%nvector
 
 #ODEVEC_L
@@ -78,7 +78,7 @@ module odevec_commons
     k = coe(this)
 #endif
 
-!cdir nodep
+!NEC$ ivdep
     do i=1,this%nvector
 #ODEVEC_RHS
     end do

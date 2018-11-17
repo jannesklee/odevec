@@ -267,7 +267,7 @@ contains
     ! set the matrix back to old value
     do k = 0,this%order-1
       do j = this%order,k+1,-1
-!cdir collapse
+!NEC$ collapse
         do l = 1,this%neq
           do i = 1,this%nvector
             y_NS(i,l,j-1) = y_NS(i,l,j-1) - y_NS(i,l,j)
@@ -407,7 +407,7 @@ contains
     dtt_scale = 1.0
     do k = 1,this%order
       dtt_scale = dt_scale*dtt_scale
-!cdir collapse
+!NEC$ collapse
       do j = 1,this%neq
         do i = 1,this%nvector
           y_NS(i,j,k) = y_NS(i,j,k)*dtt_scale
@@ -430,7 +430,7 @@ contains
     intent(inout)  :: y_NS
 
     do k = 0,this%order
-!cdir collapse
+!NEC$ collapse
       do j = 1,this%neq
         do i = 1,this%nvector
           y_NS(i,j,k) = y_NS(i,j,k) + en(i,j)*this%coeff(k,this%order)
@@ -453,7 +453,7 @@ contains
     !  loop effectively solves the Pascal Triangle without multiplications
     do l = 0,this%order-1
       do k = this%order,l+1,-1
-!cdir collapse
+!NEC$ collapse
         do j = 1,this%neq
           do i = 1,this%nvector
             y_NS(i,j,k-1) = y_NS(i,j,k) + y_NS(i,j,k-1)
@@ -478,7 +478,7 @@ contains
     intent(in)     :: LU,Piv,res
     intent(out)    :: den
 
-!cdir collapse
+!NEC$ collapse
     do j=1,this%neq
       do i=1,this%nvector
         this%den_tmp(i,j) = 0.0
@@ -487,12 +487,12 @@ contains
     ! lower system
     do k = 1,this%neq,1
       do j = 1,k-1
-!cdir nodep
+!NEC$ ivdep
         do i = 1,this%nvector
           this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,Piv(k),j)*this%den_tmp(i,j)
         end do
       end do
-!cdir nodep
+!NEC$ ivdep
       do i = 1,this%nvector
         this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
         this%den_tmp(i,k) = this%den_tmp(i,k)!/LU(i,Piv(k),k)
@@ -500,7 +500,7 @@ contains
     end do
 
     ! upper system
-!cdir collapse
+!NEC$ collapse
     do j=1,this%neq
       do i=1,this%nvector
         den(i,j) = 0.0
@@ -508,12 +508,12 @@ contains
     end do
     do k = this%neq,1,-1
       do j = k+1,this%neq
-!cdir nodep
+!NEC$ ivdep
         do i = 1,this%nvector
           den(i,k) = den(i,k) + LU(i,Piv(k),j)*den(i,j)
         end do
       end do
-!cdir nodep
+!NEC$ ivdep
       do i = 1,this%nvector
         den(i,k) = this%den_tmp(i,k) - den(i,k)
         den(i,k) = den(i,k)/LU(i,Piv(k),k)
@@ -549,7 +549,7 @@ contains
       end do
       do j = k+1,this%neq
         do m = k+1,this%neq
-!cdir nodep
+!NEC$ ivdep
           do i = 1,this%nvector
             A(i,P(m),j) = A(i,P(m),j) - A(i,P(m),k) * A(i,P(k),j)
           end do
@@ -572,7 +572,7 @@ contains
 
     call GetRHS(this,y,this%rhs)
 
-!cdir collapse
+!NEC$ collapse
     do j=1,this%neq
       do i=1,this%nvector
         res(i,j) = dt*this%rhs(i,j) - this%y_NS(i,j,1) - this%en(i,j)
@@ -616,7 +616,7 @@ contains
     intent(in) :: coeff, order
 
     faculty=1d0
-!cdir shortloop
+!NEC$ shortloop
     do i=1,order
       faculty = faculty*i
     end do
