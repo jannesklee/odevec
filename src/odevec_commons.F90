@@ -107,7 +107,11 @@ module odevec_commons
 
     !Tgas is in K
 
-    Tgas=1d5
+    Tmax = 1d3
+    Tmin = 1d3
+    do i=1,this%nvector
+      Tgas(i) = Tmin+(i-1)*(Tmax-Tmin)/this%nvector
+    end do
 
    ! replaced with a proper value according to the environment
     do i=1,this%nvector
@@ -369,21 +373,6 @@ module odevec_commons
 
   end function coe
 #endif
-
-  subroutine PrintMatrix(message,a)
-    character(*), intent(in) :: message
-    class    (*), intent(in) :: a(:,:,:)
-    integer                  :: i
-    print*,' '
-    print*, message
-    do i=1,size(a,2)
-      select type (a)
-        type is (real(8)) ; print'(100d12.2)',a(1,i,:)
-        type is (integer) ; print'(100i12  )',a(1,i,:)
-      end select
-    end do
-    print*,' '
-  end subroutine
 
 end module odevec_commons
 

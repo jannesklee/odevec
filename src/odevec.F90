@@ -61,7 +61,7 @@ contains
               this%inv_weight_2(this%nvector,this%neq), &
               this%rhs(this%nvector,this%neq), &
               this%res(this%nvector,this%neq), &
-              this%coeff(0:6,6), &
+              this%coeff(6,0:6), &
               this%tautable(this%maxorder+1,0:this%maxorder+1), &
               this%LU(this%nvector,this%neq,this%neq), &
               this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
@@ -72,14 +72,14 @@ contains
     end if
 
     ! bdf-coefficient-matrix with Nordsieck representation
-    this%coeff = reshape((/  &
-    1d0       ,1d0,0d0        ,0d0       ,0d0        ,0d0      ,0d0         , &
-    2d0/3d0   ,1d0,1d0/3d0    ,0d0       ,0d0        ,0d0      ,0d0         , &
-    6d0/11d0  ,1d0,6d0/11d0   ,1d0/11d0  ,0d0        ,0d0      ,0d0         , &
-    12d0/25d0 ,1d0,7d0/10d0   ,1d0/5d0   ,1d0/50d0   ,0d0      ,0d0         , &
-    60d0/137d0,1d0,225d0/274d0,85d0/274d0,15d0/274d0 ,1d0/274d0,0d0         , &
-    20d0/49d0 ,1d0,58d0/63d0  ,5d0/12d0  ,25d0/252d0 ,1d0/84d0 ,1d0/1764d0 /),&
-    (/7, 6/))
+    this%coeff = TRANSPOSE(reshape((/  &
+    1d0       ,1d0, 0d0        ,0d0       ,0d0        ,0d0      ,0d0         , &
+    2d0/3d0   ,1d0, 1d0/3d0    ,0d0       ,0d0        ,0d0      ,0d0         , &
+    6d0/11d0  ,1d0, 6d0/11d0   ,1d0/11d0  ,0d0        ,0d0      ,0d0         , &
+    12d0/25d0 ,1d0, 7d0/10d0   ,1d0/5d0   ,1d0/50d0   ,0d0      ,0d0         , &
+    60d0/137d0,1d0, 225d0/274d0,85d0/274d0,15d0/274d0 ,1d0/274d0,0d0         , &
+    20d0/49d0 ,1d0, 58d0/63d0  ,5d0/12d0  ,25d0/252d0 ,1d0/84d0 ,1d0/1764d0 /),&
+    (/7, 6/)))
 
     ! precompute all tau and save them in a table (better performance)
     do i=1,this%maxorder+1
@@ -150,12 +150,6 @@ contains
 
     ! 1. initialization -------------------------------------------------------!
     ! use the LU matrices from the predictor value
-    if (this%LU_PRESENT) then
-      call GetLU(this,this%coeff(1,this%order),y,dt,this%LU)
-    else
-      call GetJac(this,this%coeff(1,this%order),y,dt,this%LU)
-      call LUDecompose(this,this%LU,this%Piv)
-    end if
 
     ! Calculate initial right hand side
     call GetRHS(this,y,this%rhs)
@@ -183,11 +177,19 @@ contains
       call PredictSolution(this,this%y_NS,this%en)
       y(:,:) = this%y_NS(:,:,0)
 
+      if (this%LU_PRESENT) then
+        call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
+      else
+        call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
+        call LUDecompose(this,this%LU,this%Piv)
+      end if
+
       conv_iterator = 0
       ! 3. corrector ----------------------------------------------------------!
       corrector: do while ((conv_error > this%tautable(this%order,this%order)/ &
                                         (2d0*(this%order+2d0))) .or. &
                            (conv_iterator .eq. 0))
+
         ! calculates residuum
         call CalcResiduum(this,GetRHS,y,dt,this%res)
 
@@ -196,7 +198,7 @@ contains
 
         ! add correction to solution vector
         this%en(:,:) = this%en(:,:) + this%den(:,:)
-        y(:,:) = this%y_NS(:,:,0) + this%coeff(0,this%order)*this%en
+        y(:,:) = this%y_NS(:,:,0) + this%coeff(this%order,0)*this%en
 
         ! convergence test:
         ! if fail reset and run again starting at predictor step with 0.25
@@ -433,7 +435,7 @@ contains
 !NEC$ collapse
       do j = 1,this%neq
         do i = 1,this%nvector
-          y_NS(i,j,k) = y_NS(i,j,k) + en(i,j)*this%coeff(k,this%order)
+          y_NS(i,j,k) = y_NS(i,j,k) + en(i,j)*this%coeff(this%order,k)
         end do
       end do
     end do
@@ -542,6 +544,9 @@ contains
       maxloc_ij(:) = maxloc(abs(A(:,P(k:),k)))
       kmax = maxloc_ij(2) + k - 1
       if (kmax /= k ) P([k, kmax]) = P([kmax, k])
+    end do
+
+    do k = 1,this%neq-1
       do j = k+1,this%neq
         do i = 1,this%nvector
           A(i,P(j),k) = A(i,P(j),k) / A(i,P(k),k)
@@ -556,6 +561,7 @@ contains
         end do
       end do
     end do
+
   end subroutine LUDecompose
 
 
