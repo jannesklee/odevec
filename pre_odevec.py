@@ -323,7 +323,7 @@ if __name__ == '__main__':
     elif(args.example=="PRIMORDIAL"):
         copyfile("tests/primordial.f90","build/test.f90")
     elif(args.example=="KROME"):
-        #do nothing
+        pass
 
     # search for pragmas and replace them with the correct
     print("#  Replacing pragmas in Fortran source code...")
