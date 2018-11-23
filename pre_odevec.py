@@ -5,11 +5,12 @@ from sympy import symbols, Matrix, eye, zeros, fcode, SparseMatrix, lambdify, ns
 from scipy import sparse
 from shutil import copyfile
 from subprocess import check_output
+import os
 import numpy as np
 import argparse
 
 
-def GetSystemToSolve(nvector,example):
+def GetSystemToSolve(nvector,example,kromefile):
     # Define here the system that you wish to solve. Below is Robertsons examples.
     # need to include here a function which gets the rhs by the inserting krome
     # krome file or directly by krome instead of by hand.
@@ -58,9 +59,23 @@ def GetSystemToSolve(nvector,example):
         k = symbols('k(i\,1:%d)' % (nrea + 1))
 
         # RHS of primordial network
-        rhs = Matrix([- k[0] * y[idx_H] * y[idx_E] + 2.e0 * k[0] * y[idx_H] * y[idx_E] - k[1] * y[idx_Hj] * y[idx_E] - k[2] * y[idx_Hj] * y[idx_E] - k[3] * y[idx_HE] * y[idx_E] + 2.e0 * k[3] * y[idx_HE] * y[idx_E] - k[4] * y[idx_HEj] * y[idx_E] - k[5] * y[idx_HEj] * y[idx_E] - k[6] * y[idx_HEj] * y[idx_E] + 2.e0 * k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEjj] * y[idx_E] - k[8] * y[idx_H] * y[idx_E] + k[9] * y[idx_Hk] * y[idx_H] + k[10] * y[idx_Hk] * y[idx_H] - k[15] * y[idx_H2] * y[idx_E] + k[15] * y[idx_H2] * y[idx_E] - k[17] * y[idx_Hk] * y[idx_E] + 2.e0 * k[17] * y[idx_Hk] * y[idx_E] + k[18] * y[idx_Hk] * y[idx_H] + k[19] * y[idx_Hk] * y[idx_H] + k[21] * y[idx_Hk] * y[idx_Hj] - k[22] * y[idx_H2j] * y[idx_E] - k[23] * y[idx_H2j] * y[idx_E] + k[36] * y[idx_D] * y[idx_Hk] - k[37] * y[idx_Dj] * y[idx_E], + k[8] * y[idx_H] * y[idx_E] - k[9] * y[idx_Hk] * y[idx_H] - k[10] * y[idx_Hk] * y[idx_H] - k[17] * y[idx_Hk] * y[idx_E] - k[18] * y[idx_Hk] * y[idx_H] - k[19] * y[idx_Hk] * y[idx_H] - k[20] * y[idx_Hk] * y[idx_Hj] - k[21] * y[idx_Hk] * y[idx_Hj] - k[24] * y[idx_H2j] * y[idx_Hk] - k[36] * y[idx_D] * y[idx_Hk], - k[0] * y[idx_H] * y[idx_E] + k[1] * y[idx_Hj] * y[idx_E] + k[2] * y[idx_Hj] * y[idx_E] - k[8] * y[idx_H] * y[idx_E] - k[9] * y[idx_Hk] * y[idx_H] - k[10] * y[idx_Hk] * y[idx_H] - k[11] * y[idx_H] * y[idx_Hj] - k[12] * y[idx_H] * y[idx_Hj] - k[13] * y[idx_H2j] * y[idx_H] + k[14] * y[idx_H2] * y[idx_Hj] + 2.e0 * k[15] * y[idx_H2] * y[idx_E] - k[16] * y[idx_H2] * y[idx_H] + 3.e0 * k[16] * y[idx_H2] * y[idx_H] + k[17] * y[idx_Hk] * y[idx_E] - k[18] * y[idx_Hk] * y[idx_H] + 2.e0 * k[18] * y[idx_Hk] * y[idx_H] - k[19] * y[idx_Hk] * y[idx_H] + 2.e0 * k[19] * y[idx_Hk] * y[idx_H] + 2.e0 * k[20] * y[idx_Hk] * y[idx_Hj] + 2.e0 * k[22] * y[idx_H2j] * y[idx_E] + 2.e0 * k[23] * y[idx_H2j] * y[idx_E] + k[24] * y[idx_H2j] * y[idx_Hk] - 3.e0 * k[25] * y[idx_H] * y[idx_H] * y[idx_H] + k[25] * y[idx_H] * y[idx_H] * y[idx_H] - 3.e0 * k[26] * y[idx_H] * y[idx_H] * y[idx_H] + k[26] * y[idx_H] * y[idx_H] * y[idx_H] - 2.e0 * k[27] * y[idx_H2] * y[idx_H] * y[idx_H] - 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H] + k[29] * y[idx_Hj] * y[idx_D] - k[30] * y[idx_H] * y[idx_Dj] + k[33] * y[idx_H2] * y[idx_D] + k[34] * y[idx_H2] * y[idx_D] - k[35] * y[idx_HD] * y[idx_H], - k[3] * y[idx_HE] * y[idx_E] + k[4] * y[idx_HEj] * y[idx_E] + k[5] * y[idx_HEj] * y[idx_E], + k[9] * y[idx_Hk] * y[idx_H] + k[10] * y[idx_Hk] * y[idx_H] + k[13] * y[idx_H2j] * y[idx_H] - k[14] * y[idx_H2] * y[idx_Hj] - k[15] * y[idx_H2] * y[idx_E] - k[16] * y[idx_H2] * y[idx_H] + k[24] * y[idx_H2j] * y[idx_Hk] + k[25] * y[idx_H] * y[idx_H] * y[idx_H] + k[26] * y[idx_H] * y[idx_H] * y[idx_H] - k[27] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[27] * y[idx_H2] * y[idx_H] * y[idx_H] - k[28] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H] - k[31] * y[idx_H2] * y[idx_Dj] + k[32] * y[idx_HD] * y[idx_Hj] - k[33] * y[idx_H2] * y[idx_D] - k[34] * y[idx_H2] * y[idx_D] + k[35] * y[idx_HD] * y[idx_H], - k[29] * y[idx_Hj] * y[idx_D] + k[30] * y[idx_H] * y[idx_Dj] - k[33] * y[idx_H2] * y[idx_D] - k[34] * y[idx_H2] * y[idx_D] + k[35] * y[idx_HD] * y[idx_H] - k[36] * y[idx_D] * y[idx_Hk] + k[37] * y[idx_Dj] * y[idx_E], + k[31] * y[idx_H2] * y[idx_Dj] - k[32] * y[idx_HD] * y[idx_Hj] + k[33] * y[idx_H2] * y[idx_D] + k[34] * y[idx_H2] * y[idx_D] - k[35] * y[idx_HD] * y[idx_H] + k[36] * y[idx_D] * y[idx_Hk], + k[0] * y[idx_H] * y[idx_E] - k[1] * y[idx_Hj] * y[idx_E] - k[2] * y[idx_Hj] * y[idx_E] - k[11] * y[idx_H] * y[idx_Hj] - k[12] * y[idx_H] * y[idx_Hj] + k[13] * y[idx_H2j] * y[idx_H] - k[14] * y[idx_H2] * y[idx_Hj] - k[20] * y[idx_Hk] * y[idx_Hj] - k[21] * y[idx_Hk] * y[idx_Hj] - k[29] * y[idx_Hj] * y[idx_D] + k[30] * y[idx_H] * y[idx_Dj] + k[31] * y[idx_H2] * y[idx_Dj] - k[32] * y[idx_HD] * y[idx_Hj], + k[3] * y[idx_HE] * y[idx_E] - k[4] * y[idx_HEj] * y[idx_E] - k[5] * y[idx_HEj] * y[idx_E] - k[6] * y[idx_HEj] * y[idx_E] + k[7] * y[idx_HEjj] * y[idx_E], + k[11] * y[idx_H] * y[idx_Hj] + k[12] * y[idx_H] * y[idx_Hj] - k[13] * y[idx_H2j] * y[idx_H] + k[14] * y[idx_H2] * y[idx_Hj] + k[21] * y[idx_Hk] * y[idx_Hj] - k[22] * y[idx_H2j] * y[idx_E] - k[23] * y[idx_H2j] * y[idx_E] - k[24] * y[idx_H2j] * y[idx_Hk], + k[29] * y[idx_Hj] * y[idx_D] - k[30] * y[idx_H] * y[idx_Dj] - k[31] * y[idx_H2] * y[idx_Dj] + k[32] * y[idx_HD] * y[idx_Hj] - k[37] * y[idx_Dj] * y[idx_E], + k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEjj] * y[idx_E], 0.0, 0.0, 0.0, 0.0])
+        rhs = Matrix([- k[0] * y[idx_H] * y[idx_E] + 2.e0 * k[0] * y[idx_H] * y[idx_E] - k[1] * y[idx_Hj] * y[idx_E] - k[2] * y[idx_Hj] * y[idx_E] - k[3] * y[idx_HE] * y[idx_E] + 2.e0 * k[3] * y[idx_HE] * y[idx_E] - k[4] * y[idx_HEj] * y[idx_E] - k[5] * y[idx_HEj] * y[idx_E] - k[6] * y[idx_HEj] * y[idx_E] + 2.e0 * k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEjj] * y[idx_E] - k[8] * y[idx_H] * y[idx_E] + k[9] * y[idx_Hk] * y[idx_H] + k[10] * y[idx_Hk] * y[idx_H] - k[15] * y[idx_H2] * y[idx_E] + k[15] * y[idx_H2] * y[idx_E] - k[17] * y[idx_Hk] * y[idx_E] + 2.e0 * k[17] * y[idx_Hk] * y[idx_E] + k[18] * y[idx_Hk] * y[idx_H] + k[19] * y[idx_Hk] * y[idx_H] + k[21] * y[idx_Hk] * y[idx_Hj] - k[22] * y[idx_H2j] * y[idx_E] - k[23] * y[idx_H2j] * y[idx_E] + k[36] * y[idx_D] * y[idx_Hk] - k[37] * y[idx_Dj] * y[idx_E],
+            + k[8] * y[idx_H] * y[idx_E] - k[9] * y[idx_Hk] * y[idx_H] - k[10] * y[idx_Hk] * y[idx_H] - k[17] * y[idx_Hk] * y[idx_E] - k[18] * y[idx_Hk] * y[idx_H] - k[19] * y[idx_Hk] * y[idx_H] - k[20] * y[idx_Hk] * y[idx_Hj] - k[21] * y[idx_Hk] * y[idx_Hj] - k[24] * y[idx_H2j] * y[idx_Hk] - k[36] * y[idx_D] * y[idx_Hk],
+            - k[0] * y[idx_H] * y[idx_E] + k[1] * y[idx_Hj] * y[idx_E] + k[2] * y[idx_Hj] * y[idx_E] - k[8] * y[idx_H] * y[idx_E] - k[9] * y[idx_Hk] * y[idx_H] - k[10] * y[idx_Hk] * y[idx_H] - k[11] * y[idx_H] * y[idx_Hj] - k[12] * y[idx_H] * y[idx_Hj] - k[13] * y[idx_H2j] * y[idx_H] + k[14] * y[idx_H2] * y[idx_Hj] + 2.e0 * k[15] * y[idx_H2] * y[idx_E] - k[16] * y[idx_H2] * y[idx_H] + 3.e0 * k[16] * y[idx_H2] * y[idx_H] + k[17] * y[idx_Hk] * y[idx_E] - k[18] * y[idx_Hk] * y[idx_H] + 2.e0 * k[18] * y[idx_Hk] * y[idx_H] - k[19] * y[idx_Hk] * y[idx_H] + 2.e0 * k[19] * y[idx_Hk] * y[idx_H] + 2.e0 * k[20] * y[idx_Hk] * y[idx_Hj] + 2.e0 * k[22] * y[idx_H2j] * y[idx_E] + 2.e0 * k[23] * y[idx_H2j] * y[idx_E] + k[24] * y[idx_H2j] * y[idx_Hk] - 3.e0 * k[25] * y[idx_H] * y[idx_H] * y[idx_H] + k[25] * y[idx_H] * y[idx_H] * y[idx_H] - 3.e0 * k[26] * y[idx_H] * y[idx_H] * y[idx_H] + k[26] * y[idx_H] * y[idx_H] * y[idx_H] - 2.e0 * k[27] * y[idx_H2] * y[idx_H] * y[idx_H] - 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H] + k[29] * y[idx_Hj] * y[idx_D] - k[30] * y[idx_H] * y[idx_Dj] + k[33] * y[idx_H2] * y[idx_D] + k[34] * y[idx_H2] * y[idx_D] - k[35] * y[idx_HD] * y[idx_H],
+            - k[3] * y[idx_HE] * y[idx_E] + k[4] * y[idx_HEj] * y[idx_E] + k[5] * y[idx_HEj] * y[idx_E],
+            + k[9] * y[idx_Hk] * y[idx_H] + k[10] * y[idx_Hk] * y[idx_H] + k[13] * y[idx_H2j] * y[idx_H] - k[14] * y[idx_H2] * y[idx_Hj] - k[15] * y[idx_H2] * y[idx_E] - k[16] * y[idx_H2] * y[idx_H] + k[24] * y[idx_H2j] * y[idx_Hk] + k[25] * y[idx_H] * y[idx_H] * y[idx_H] + k[26] * y[idx_H] * y[idx_H] * y[idx_H] - k[27] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[27] * y[idx_H2] * y[idx_H] * y[idx_H] - k[28] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H] - k[31] * y[idx_H2] * y[idx_Dj] + k[32] * y[idx_HD] * y[idx_Hj] - k[33] * y[idx_H2] * y[idx_D] - k[34] * y[idx_H2] * y[idx_D] + k[35] * y[idx_HD] * y[idx_H],
+            - k[29] * y[idx_Hj] * y[idx_D] + k[30] * y[idx_H] * y[idx_Dj] - k[33] * y[idx_H2] * y[idx_D] - k[34] * y[idx_H2] * y[idx_D] + k[35] * y[idx_HD] * y[idx_H] - k[36] * y[idx_D] * y[idx_Hk] + k[37] * y[idx_Dj] * y[idx_E],
+            + k[31] * y[idx_H2] * y[idx_Dj] - k[32] * y[idx_HD] * y[idx_Hj] + k[33] * y[idx_H2] * y[idx_D] + k[34] * y[idx_H2] * y[idx_D] - k[35] * y[idx_HD] * y[idx_H] + k[36] * y[idx_D] * y[idx_Hk],
+            + k[0] * y[idx_H] * y[idx_E] - k[1] * y[idx_Hj] * y[idx_E] - k[2] * y[idx_Hj] * y[idx_E] - k[11] * y[idx_H] * y[idx_Hj] - k[12] * y[idx_H] * y[idx_Hj] + k[13] * y[idx_H2j] * y[idx_H] - k[14] * y[idx_H2] * y[idx_Hj] - k[20] * y[idx_Hk] * y[idx_Hj] - k[21] * y[idx_Hk] * y[idx_Hj] - k[29] * y[idx_Hj] * y[idx_D] + k[30] * y[idx_H] * y[idx_Dj] + k[31] * y[idx_H2] * y[idx_Dj] - k[32] * y[idx_HD] * y[idx_Hj],
+            + k[3] * y[idx_HE] * y[idx_E] - k[4] * y[idx_HEj] * y[idx_E] - k[5] * y[idx_HEj] * y[idx_E] - k[6] * y[idx_HEj] * y[idx_E] + k[7] * y[idx_HEjj] * y[idx_E],
+            + k[11] * y[idx_H] * y[idx_Hj] + k[12] * y[idx_H] * y[idx_Hj] - k[13] * y[idx_H2j] * y[idx_H] + k[14] * y[idx_H2] * y[idx_Hj] + k[21] * y[idx_Hk] * y[idx_Hj] - k[22] * y[idx_H2j] * y[idx_E] - k[23] * y[idx_H2j] * y[idx_E] - k[24] * y[idx_H2j] * y[idx_Hk],
+            + k[29] * y[idx_Hj] * y[idx_D] - k[30] * y[idx_H] * y[idx_Dj] - k[31] * y[idx_H2] * y[idx_Dj] + k[32] * y[idx_HD] * y[idx_Hj] - k[37] * y[idx_Dj] * y[idx_E],
+            + k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEjj] * y[idx_E],
+            0.0, 0.0, 0.0, 0.0])
 
-        #------------------------------------------------------------------------------#
+    elif (example=="KROME"):
+
+        exec(open(kromefile).read())
 
     return [y, rhs, nvector, neq, maxorder, nrea]
 
@@ -198,6 +213,10 @@ if __name__ == '__main__':
         default='build/odevec_commons.f90',
         help='path to the output common file')
     parser.add_argument(
+        '--krome_setupfile',
+        default=None,
+        help='path to an extra file from krome providing the ode')
+    parser.add_argument(
         '--nvector',
         default=1,
         type=int,
@@ -242,8 +261,10 @@ if __name__ == '__main__':
         help='Print sparsity structure of the matrices to stdout.')
     args = parser.parse_args()
 
+    if (args.krome_setupfile != None):
+        args.example="KROME"
     # get right-hand-side
-    [y, rhs, nvector, neq, maxorder, nrea] = GetSystemToSolve(args.nvector,example=args.example)
+    [y, rhs, nvector, neq, maxorder, nrea] = GetSystemToSolve(args.nvector,example=args.example,kromefile=args.krome_setupfile)
 
     # calculate jacobian
     jac = rhs.jacobian(y)
@@ -301,6 +322,8 @@ if __name__ == '__main__':
         copyfile("tests/rober.f90","build/test.f90")
     elif(args.example=="PRIMORDIAL"):
         copyfile("tests/primordial.f90","build/test.f90")
+    elif(args.example=="KROME"):
+        #do nothing
 
     # search for pragmas and replace them with the correct
     print("#  Replacing pragmas in Fortran source code...")
