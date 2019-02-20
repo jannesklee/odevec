@@ -67,7 +67,7 @@ contains
               this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
               STAT=err)
     if (err.ne.0) then
-      print *, "Memory allocation error. OdeVec could not be intialized."
+      print *, "ODEVEC: Memory allocation error. OdeVec could not be intialized."
       stop
     end if
 
@@ -104,7 +104,7 @@ contains
                stat=err)
 
     if (err.ne.0) then
-      print *, "Memory deallocation error. OdeVec was not properly closed."
+      print *, "ODEVEC: Memory deallocation error. OdeVec was not properly closed."
       stop
     end if
   end subroutine
@@ -210,10 +210,16 @@ contains
         if (reset) then
           dt_scale = 0.25
           conv_failed = conv_failed + 1
-          if (conv_failed .gt. 10) stop
+          if (conv_failed .gt. 10) then
+            print *, "ODEVEC: Convergence failed! Abortion after more than 10 iterations."
+            stop
+          end if
           conv_iterator = 0
           call ResetSystem(this,dt_scale,dt,this%y_NS)
-          if (dt .lt. this%dt_min) stop
+          if (dt .lt. this%dt_min) then
+            print *, "ODEVEC: Convergence failed! Abortion, because timestep too small."
+            stop
+          end if
           cycle predictor
         end if
       end do corrector
