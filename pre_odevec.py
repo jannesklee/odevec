@@ -1,4 +1,12 @@
 #!/usr/bin/env python
+""" Python preprocessor for the stiff BDF solver OdeVec
+
+This script sets up the system to solve and does some precomputations
+if possible. This includes writing down Fortran code in *.F90 template
+files. There, placeholder (Pragmas) are placed, which are searched and
+replaced. The precomputations includes the symbolic computation of the
+Jacobian and preordering of the latter.
+"""
 
 from __future__ import print_function
 from sympy import symbols, Matrix, eye, zeros, fcode, SparseMatrix, lambdify, nsimplify
@@ -10,34 +18,72 @@ import numpy as np
 import argparse
 
 
-def GetSystemToSolve(nvector,example,kromefile):
-    # Define here the system that you wish to solve. Below is Robertsons examples.
-    # need to include here a function which gets the rhs by the inserting krome
-    # krome file or directly by krome instead of by hand.
-    # General indices
+def GetSystemToSolve(nvector,example,kromefile=""):
+    """ Sets up the right-hand-side of the problem
+
+    Defines the RHS that should be solved. Currently there are three
+    possibilties:
+    1. Robertson's example - 3 chemical species (very stiff)
+    2. A primordial network - taken from the KROME package
+    3. Arbitrary networks with KROME
+
+    Parameters
+    ----------
+    nvector : int
+        The used vector length.
+    example : str
+	The chosen examples "ROBER", "PRIMORDIAL" or "KROME"
+    kromefile : str, optional
+	Path to kromefile were the RHS of the network is dumped in
+	Python syntax (default is empty string)
+
+    Returns
+    -------
+    y : sympy matrix
+        The functions of the problem.
+    rhs : sympy matrix
+        The right-hand side of the problem.
+    nvector : int
+        Vector length that is intended to use.
+    neq : int
+        Number of equations. Length of array y and rhs.
+    maxorder : int
+        Maximum order until LU decomposition should be done
+        in precompution.
+    nrea : int
+        Number of reactions. Only necessary for primordial setups.
+    """
+
+    # general global constants and printouts
     nvector = nvector
+    maxorder = 5
     print("#  Setting up system...")
     print("#  Vector length \"nvector\":", nvector)
-    maxorder = 5
 
     #------------------------------------------------------------------------------#
+    # Robertson's example
     if (example=="ROBER"):
-        # robertson's test
-        neq = 3
-        y = symbols('y(i\,1:%d)'%(neq+1))
-        k = 0
-        nrea = 0
         print("#  Test: ROBER")
 
-        rhs = Matrix([-0.04*y[0]+1e4*y[1]*y[2],0.04*y[0]-3e7*y[1]*y[1]-1e4*y[1]*y[2],3e7*y[1]*y[1]])
+        neq = 3
+        k = 0
+        nrea = 0
 
+	# define sympy symbols
+        y = symbols('y(i\,1:%d)'%(neq+1))
+
+        rhs = Matrix([-0.04*y[0]+1e4*y[1]*y[2],
+		      0.04*y[0]-3e7*y[1]*y[1]-1e4*y[1]*y[2],
+                      3e7*y[1]*y[1]])
+
+    # Primordial network with 16 different species
     elif (example=="PRIMORDIAL"):
-        # Primordial network with 16 different species
+        print("#  Test: PRIMORDIAL")
+
         neq = 16
         nrea = 38
 
-        print("#  Test: PRIMORDIAL")
-
+	# indexing of species
         idx_E = 0
         idx_Hk = 1
         idx_H = 2
@@ -55,34 +101,162 @@ def GetSystemToSolve(nvector,example,kromefile):
         idx_Tgas = 14
         idx_dummy = 15
 
+	# define sympy symbols
         y = symbols('y(i\,1:%d)' % (neq + 1))
         k = symbols('k(i\,1:%d)' % (nrea + 1))
 
         # RHS of primordial network
-        rhs = Matrix([- k[0] * y[idx_H] * y[idx_E] + 2.e0 * k[0] * y[idx_H] * y[idx_E] - k[1] * y[idx_Hj] * y[idx_E] - k[2] * y[idx_Hj] * y[idx_E] - k[3] * y[idx_HE] * y[idx_E] + 2.e0 * k[3] * y[idx_HE] * y[idx_E] - k[4] * y[idx_HEj] * y[idx_E] - k[5] * y[idx_HEj] * y[idx_E] - k[6] * y[idx_HEj] * y[idx_E] + 2.e0 * k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEjj] * y[idx_E] - k[8] * y[idx_H] * y[idx_E] + k[9] * y[idx_Hk] * y[idx_H] + k[10] * y[idx_Hk] * y[idx_H] - k[15] * y[idx_H2] * y[idx_E] + k[15] * y[idx_H2] * y[idx_E] - k[17] * y[idx_Hk] * y[idx_E] + 2.e0 * k[17] * y[idx_Hk] * y[idx_E] + k[18] * y[idx_Hk] * y[idx_H] + k[19] * y[idx_Hk] * y[idx_H] + k[21] * y[idx_Hk] * y[idx_Hj] - k[22] * y[idx_H2j] * y[idx_E] - k[23] * y[idx_H2j] * y[idx_E] + k[36] * y[idx_D] * y[idx_Hk] - k[37] * y[idx_Dj] * y[idx_E],
-            + k[8] * y[idx_H] * y[idx_E] - k[9] * y[idx_Hk] * y[idx_H] - k[10] * y[idx_Hk] * y[idx_H] - k[17] * y[idx_Hk] * y[idx_E] - k[18] * y[idx_Hk] * y[idx_H] - k[19] * y[idx_Hk] * y[idx_H] - k[20] * y[idx_Hk] * y[idx_Hj] - k[21] * y[idx_Hk] * y[idx_Hj] - k[24] * y[idx_H2j] * y[idx_Hk] - k[36] * y[idx_D] * y[idx_Hk],
-            - k[0] * y[idx_H] * y[idx_E] + k[1] * y[idx_Hj] * y[idx_E] + k[2] * y[idx_Hj] * y[idx_E] - k[8] * y[idx_H] * y[idx_E] - k[9] * y[idx_Hk] * y[idx_H] - k[10] * y[idx_Hk] * y[idx_H] - k[11] * y[idx_H] * y[idx_Hj] - k[12] * y[idx_H] * y[idx_Hj] - k[13] * y[idx_H2j] * y[idx_H] + k[14] * y[idx_H2] * y[idx_Hj] + 2.e0 * k[15] * y[idx_H2] * y[idx_E] - k[16] * y[idx_H2] * y[idx_H] + 3.e0 * k[16] * y[idx_H2] * y[idx_H] + k[17] * y[idx_Hk] * y[idx_E] - k[18] * y[idx_Hk] * y[idx_H] + 2.e0 * k[18] * y[idx_Hk] * y[idx_H] - k[19] * y[idx_Hk] * y[idx_H] + 2.e0 * k[19] * y[idx_Hk] * y[idx_H] + 2.e0 * k[20] * y[idx_Hk] * y[idx_Hj] + 2.e0 * k[22] * y[idx_H2j] * y[idx_E] + 2.e0 * k[23] * y[idx_H2j] * y[idx_E] + k[24] * y[idx_H2j] * y[idx_Hk] - 3.e0 * k[25] * y[idx_H] * y[idx_H] * y[idx_H] + k[25] * y[idx_H] * y[idx_H] * y[idx_H] - 3.e0 * k[26] * y[idx_H] * y[idx_H] * y[idx_H] + k[26] * y[idx_H] * y[idx_H] * y[idx_H] - 2.e0 * k[27] * y[idx_H2] * y[idx_H] * y[idx_H] - 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H] + k[29] * y[idx_Hj] * y[idx_D] - k[30] * y[idx_H] * y[idx_Dj] + k[33] * y[idx_H2] * y[idx_D] + k[34] * y[idx_H2] * y[idx_D] - k[35] * y[idx_HD] * y[idx_H],
-            - k[3] * y[idx_HE] * y[idx_E] + k[4] * y[idx_HEj] * y[idx_E] + k[5] * y[idx_HEj] * y[idx_E],
-            + k[9] * y[idx_Hk] * y[idx_H] + k[10] * y[idx_Hk] * y[idx_H] + k[13] * y[idx_H2j] * y[idx_H] - k[14] * y[idx_H2] * y[idx_Hj] - k[15] * y[idx_H2] * y[idx_E] - k[16] * y[idx_H2] * y[idx_H] + k[24] * y[idx_H2j] * y[idx_Hk] + k[25] * y[idx_H] * y[idx_H] * y[idx_H] + k[26] * y[idx_H] * y[idx_H] * y[idx_H] - k[27] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[27] * y[idx_H2] * y[idx_H] * y[idx_H] - k[28] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H] - k[31] * y[idx_H2] * y[idx_Dj] + k[32] * y[idx_HD] * y[idx_Hj] - k[33] * y[idx_H2] * y[idx_D] - k[34] * y[idx_H2] * y[idx_D] + k[35] * y[idx_HD] * y[idx_H],
-            - k[29] * y[idx_Hj] * y[idx_D] + k[30] * y[idx_H] * y[idx_Dj] - k[33] * y[idx_H2] * y[idx_D] - k[34] * y[idx_H2] * y[idx_D] + k[35] * y[idx_HD] * y[idx_H] - k[36] * y[idx_D] * y[idx_Hk] + k[37] * y[idx_Dj] * y[idx_E],
-            + k[31] * y[idx_H2] * y[idx_Dj] - k[32] * y[idx_HD] * y[idx_Hj] + k[33] * y[idx_H2] * y[idx_D] + k[34] * y[idx_H2] * y[idx_D] - k[35] * y[idx_HD] * y[idx_H] + k[36] * y[idx_D] * y[idx_Hk],
-            + k[0] * y[idx_H] * y[idx_E] - k[1] * y[idx_Hj] * y[idx_E] - k[2] * y[idx_Hj] * y[idx_E] - k[11] * y[idx_H] * y[idx_Hj] - k[12] * y[idx_H] * y[idx_Hj] + k[13] * y[idx_H2j] * y[idx_H] - k[14] * y[idx_H2] * y[idx_Hj] - k[20] * y[idx_Hk] * y[idx_Hj] - k[21] * y[idx_Hk] * y[idx_Hj] - k[29] * y[idx_Hj] * y[idx_D] + k[30] * y[idx_H] * y[idx_Dj] + k[31] * y[idx_H2] * y[idx_Dj] - k[32] * y[idx_HD] * y[idx_Hj],
-            + k[3] * y[idx_HE] * y[idx_E] - k[4] * y[idx_HEj] * y[idx_E] - k[5] * y[idx_HEj] * y[idx_E] - k[6] * y[idx_HEj] * y[idx_E] + k[7] * y[idx_HEjj] * y[idx_E],
-            + k[11] * y[idx_H] * y[idx_Hj] + k[12] * y[idx_H] * y[idx_Hj] - k[13] * y[idx_H2j] * y[idx_H] + k[14] * y[idx_H2] * y[idx_Hj] + k[21] * y[idx_Hk] * y[idx_Hj] - k[22] * y[idx_H2j] * y[idx_E] - k[23] * y[idx_H2j] * y[idx_E] - k[24] * y[idx_H2j] * y[idx_Hk],
-            + k[29] * y[idx_Hj] * y[idx_D] - k[30] * y[idx_H] * y[idx_Dj] - k[31] * y[idx_H2] * y[idx_Dj] + k[32] * y[idx_HD] * y[idx_Hj] - k[37] * y[idx_Dj] * y[idx_E],
-            + k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEjj] * y[idx_E],
-            0.0, 0.0, 0.0, 0.0])
+        rhs = Matrix([- k[0] * y[idx_H] * y[idx_E] + 2.e0 * k[0] * y[idx_H] * y[idx_E]
+                      - k[1] * y[idx_Hj] * y[idx_E] - k[2] * y[idx_Hj] * y[idx_E]
+                      - k[3] * y[idx_HE] * y[idx_E] + 2.e0 * k[3] * y[idx_HE] * y[idx_E]
+                      - k[4] * y[idx_HEj] * y[idx_E] - k[5] * y[idx_HEj] * y[idx_E]
+                      - k[6] * y[idx_HEj] * y[idx_E] + 2.e0 * k[6] * y[idx_HEj] * y[idx_E]
+                      - k[7] * y[idx_HEjj] * y[idx_E]
+                      - k[8] * y[idx_H] * y[idx_E]
+                      + k[9] * y[idx_Hk] * y[idx_H]
+                      + k[10] * y[idx_Hk] * y[idx_H]
+                      - k[15] * y[idx_H2] * y[idx_E] + k[15] * y[idx_H2] * y[idx_E]
+                      - k[17] * y[idx_Hk] * y[idx_E] + 2.e0 * k[17] * y[idx_Hk] * y[idx_E]
+                      + k[18] * y[idx_Hk] * y[idx_H]
+                      + k[19] * y[idx_Hk] * y[idx_H]
+                      + k[21] * y[idx_Hk] * y[idx_Hj]
+                      - k[22] * y[idx_H2j] * y[idx_E]
+                      - k[23] * y[idx_H2j] * y[idx_E]
+                      + k[36] * y[idx_D] * y[idx_Hk]
+                      - k[37] * y[idx_Dj] * y[idx_E],
+                      + k[8] * y[idx_H] * y[idx_E]
+                      - k[9] * y[idx_Hk] * y[idx_H]
+                      - k[10] * y[idx_Hk] * y[idx_H]
+                      - k[17] * y[idx_Hk] * y[idx_E]
+                      - k[18] * y[idx_Hk] * y[idx_H]
+                      - k[19] * y[idx_Hk] * y[idx_H]
+                      - k[20] * y[idx_Hk] * y[idx_Hj]
+                      - k[21] * y[idx_Hk] * y[idx_Hj]
+                      - k[24] * y[idx_H2j] * y[idx_Hk]
+                      - k[36] * y[idx_D] * y[idx_Hk],
+                      - k[0] * y[idx_H] * y[idx_E]
+                      + k[1] * y[idx_Hj] * y[idx_E]
+                      + k[2] * y[idx_Hj] * y[idx_E]
+                      - k[8] * y[idx_H] * y[idx_E]
+                      - k[9] * y[idx_Hk] * y[idx_H]
+                      - k[10] * y[idx_Hk] * y[idx_H]
+                      - k[11] * y[idx_H] * y[idx_Hj]
+                      - k[12] * y[idx_H] * y[idx_Hj]
+                      - k[13] * y[idx_H2j] * y[idx_H]
+                      + k[14] * y[idx_H2] * y[idx_Hj]
+                      + 2.e0 * k[15] * y[idx_H2] * y[idx_E]
+                      - k[16] * y[idx_H2] * y[idx_H] + 3.e0 * k[16] * y[idx_H2] * y[idx_H]
+                      + k[17] * y[idx_Hk] * y[idx_E]
+                      - k[18] * y[idx_Hk] * y[idx_H] + 2.e0 * k[18] * y[idx_Hk] * y[idx_H]
+                      - k[19] * y[idx_Hk] * y[idx_H] + 2.e0 * k[19] * y[idx_Hk] * y[idx_H]
+                      + 2.e0 * k[20] * y[idx_Hk] * y[idx_Hj]
+                      + 2.e0 * k[22] * y[idx_H2j] * y[idx_E]
+                      + 2.e0 * k[23] * y[idx_H2j] * y[idx_E]
+                      + k[24] * y[idx_H2j] * y[idx_Hk]
+                      - 3.e0 * k[25] * y[idx_H] * y[idx_H] * y[idx_H] + k[25] * y[idx_H] * y[idx_H] * y[idx_H]
+                      - 3.e0 * k[26] * y[idx_H] * y[idx_H] * y[idx_H] + k[26] * y[idx_H] * y[idx_H] * y[idx_H]
+                      - 2.e0 * k[27] * y[idx_H2] * y[idx_H] * y[idx_H]
+                      - 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H]
+                      + k[29] * y[idx_Hj] * y[idx_D]
+                      - k[30] * y[idx_H] * y[idx_Dj]
+                      + k[33] * y[idx_H2] * y[idx_D]
+                      + k[34] * y[idx_H2] * y[idx_D]
+                      - k[35] * y[idx_HD] * y[idx_H],
+                      - k[3] * y[idx_HE] * y[idx_E]
+                      + k[4] * y[idx_HEj] * y[idx_E]
+                      + k[5] * y[idx_HEj] * y[idx_E],
+                      + k[9] * y[idx_Hk] * y[idx_H]
+                      + k[10] * y[idx_Hk] * y[idx_H]
+                      + k[13] * y[idx_H2j] * y[idx_H]
+                      - k[14] * y[idx_H2] * y[idx_Hj]
+                      - k[15] * y[idx_H2] * y[idx_E]
+                      - k[16] * y[idx_H2] * y[idx_H]
+                      + k[24] * y[idx_H2j] * y[idx_Hk]
+                      + k[25] * y[idx_H] * y[idx_H] * y[idx_H]
+                      + k[26] * y[idx_H] * y[idx_H] * y[idx_H]
+                      - k[27] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[27] * y[idx_H2] * y[idx_H] * y[idx_H]
+                      - k[28] * y[idx_H2] * y[idx_H] * y[idx_H] + 2.e0 * k[28] * y[idx_H2] * y[idx_H] * y[idx_H]
+                      - k[31] * y[idx_H2] * y[idx_Dj]
+                      + k[32] * y[idx_HD] * y[idx_Hj]
+                      - k[33] * y[idx_H2] * y[idx_D]
+                      - k[34] * y[idx_H2] * y[idx_D]
+                      + k[35] * y[idx_HD] * y[idx_H],
+                      - k[29] * y[idx_Hj] * y[idx_D]
+                      + k[30] * y[idx_H] * y[idx_Dj]
+                      - k[33] * y[idx_H2] * y[idx_D]
+                      - k[34] * y[idx_H2] * y[idx_D]
+                      + k[35] * y[idx_HD] * y[idx_H]
+                      - k[36] * y[idx_D] * y[idx_Hk]
+                      + k[37] * y[idx_Dj] * y[idx_E],
+                      + k[31] * y[idx_H2] * y[idx_Dj]
+                      - k[32] * y[idx_HD] * y[idx_Hj]
+                      + k[33] * y[idx_H2] * y[idx_D]
+                      + k[34] * y[idx_H2] * y[idx_D]
+                      - k[35] * y[idx_HD] * y[idx_H]
+                      + k[36] * y[idx_D] * y[idx_Hk],
+                      + k[0] * y[idx_H] * y[idx_E]
+                      - k[1] * y[idx_Hj] * y[idx_E]
+                      - k[2] * y[idx_Hj] * y[idx_E]
+                      - k[11] * y[idx_H] * y[idx_Hj]
+                      - k[12] * y[idx_H] * y[idx_Hj]
+                      + k[13] * y[idx_H2j] * y[idx_H]
+                      - k[14] * y[idx_H2] * y[idx_Hj]
+                      - k[20] * y[idx_Hk] * y[idx_Hj]
+                      - k[21] * y[idx_Hk] * y[idx_Hj]
+                      - k[29] * y[idx_Hj] * y[idx_D]
+                      + k[30] * y[idx_H] * y[idx_Dj]
+                      + k[31] * y[idx_H2] * y[idx_Dj]
+                      - k[32] * y[idx_HD] * y[idx_Hj],
+                      + k[3] * y[idx_HE] * y[idx_E]
+                      - k[4] * y[idx_HEj] * y[idx_E]
+                      - k[5] * y[idx_HEj] * y[idx_E]
+                      - k[6] * y[idx_HEj] * y[idx_E]
+                      + k[7] * y[idx_HEjj] * y[idx_E],
+                      + k[11] * y[idx_H] * y[idx_Hj]
+                      + k[12] * y[idx_H] * y[idx_Hj]
+                      - k[13] * y[idx_H2j] * y[idx_H]
+                      + k[14] * y[idx_H2] * y[idx_Hj]
+                      + k[21] * y[idx_Hk] * y[idx_Hj]
+                      - k[22] * y[idx_H2j] * y[idx_E]
+                      - k[23] * y[idx_H2j] * y[idx_E]
+                      - k[24] * y[idx_H2j] * y[idx_Hk],
+                      + k[29] * y[idx_Hj] * y[idx_D]
+                      - k[30] * y[idx_H] * y[idx_Dj]
+                      - k[31] * y[idx_H2] * y[idx_Dj]
+                      + k[32] * y[idx_HD] * y[idx_Hj]
+                      - k[37] * y[idx_Dj] * y[idx_E],
+                      + k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEjj] * y[idx_E],
+                      0.0, 0.0, 0.0, 0.0])
 
+    # Arbitrary networks for usage in KROME
     elif (example=="KROME"):
 
         exec(open(kromefile).read())
 
-    return [y, rhs, nvector, neq, maxorder, nrea]
+    return y, rhs, nvector, neq, maxorder, nrea
 
 # replaces the pragmas with fortran syntax
 
 
 def ReplacePragmas(fh_list, fout):
+    """
+        Replaces pragmas in the *.F90 files. This includes writing out the
+        different Jacobian or the LU-matrix in fortran syntax and writing
+        down the fixed vector length.
+
+    Parameters
+    ----------
+    fh_list : list of files
+        List with two files which are read in. A common template file
+        and a solver template file. These files provide pragmas and are
+        read in.
+
+    fout : list of files
+        List with two files which are written out. A common template file
+        and a solver template file. These files have substituted pragmas
+        from the ingoing template files.
+
+    """
     for k, fh in enumerate(fh_list):
         for row in fh:
             srow = row.strip()
@@ -146,6 +320,34 @@ def ReplacePragmas(fh_list, fout):
 
 
 def ReorderSystemCMK(P,y,rhs):
+    """
+    BUG: Reordering is not working properly at the moment.
+    BUG: Nothing done with y_tmp, rhs_tmp.
+
+    Reorders the Jacobian in order to have a better LU matrix
+    with the CMK algorithm.
+
+    Parameters
+    ----------
+    P : sympy matrix
+        Matrix to be reordered in order to have a better.
+    y : sympy matrix
+        Function symbols of equation system.
+    rhs : sympy matrix
+        Right-hand-side of the problem.
+
+    Returns
+    -------
+    P_order : sympy matrix
+        Reordered sympy matrix of ingoing matrix P.
+    y_tmp : sympy matrix
+        Reordered sympy matrix of ingoing matrix y.
+    rhs_tmp : sympy matrix
+        Reorodered sympy matrix of ingoin matrix rhs.
+    perm : scipy matrix
+        Permuttation matrix.
+    """
+
     # replace non-zero entries with ones for ordering algorithms in scipy
     P1 = np.array(P.col_list())
     P1[:, 2] = 1
@@ -168,10 +370,16 @@ def ReorderSystemCMK(P,y,rhs):
     print("\nFinished reordering with CMK-Algorithm...")
     print("Permutation list", perm, "\n")
 
-    return [P_order,y_tmp,rhs_tmp,perm]
+    return P_order,y_tmp,rhs_tmp,perm
 
 
 def ReorderSystemInvert(P,y,rhs):
+    """
+    BUG: Reordering is not working properly at the moment.
+
+    Reorders the Jacobian in order to have a better LU matrix by
+    inverting the matrix (graphically).
+    """
 
     perm = range(len(rhs))[::-1]
 
@@ -186,8 +394,16 @@ def ReorderSystemInvert(P,y,rhs):
     print("Permutation list", perm, "\n")
     return [P_order,y_order,rhs_order,perm]
 
+
 # command line execution
 if __name__ == '__main__':
+    """ Command line execution of preprocessor
+
+    This is the standard procedure in order to run the preprocessor.
+    The routine calls all necessary routines for precomputation, preordering,
+    etc. It finally writes out the fortran files, which can be compiled in a
+    next step.
+    """
     commit = check_output("git rev-parse --short HEAD", shell=True).rstrip()
     print("#------------------------------------------------------------------#")
     print("#        Running OdeVec Preprocessing                              #")
@@ -264,7 +480,7 @@ if __name__ == '__main__':
     if (args.krome_setupfile != None):
         args.example="KROME"
     # get right-hand-side
-    [y, rhs, nvector, neq, maxorder, nrea] = GetSystemToSolve(args.nvector,example=args.example,kromefile=args.krome_setupfile)
+    y, rhs, nvector, neq, maxorder, nrea = GetSystemToSolve(args.nvector,example=args.example,kromefile=args.krome_setupfile)
 
     # calculate jacobian
     jac = rhs.jacobian(y)
