@@ -260,18 +260,18 @@ def ReplacePragmas(fh_list, fout):
     for k, fh in enumerate(fh_list):
         for row in fh:
             srow = row.strip()
-            if(srow == "#ODEVEC_L"):
+            if(srow == "#ODEVEC_LU"):
                 if(np.shape(P)[0] < args.maxsize):
-                    for i in range(L.shape[0]):
-                        for j in range(L.shape[1]):
-                            fout[k].write("      L(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                                          fcode(L[i, j], source_format='free', standard=95) + "\n")
-            elif(srow == "#ODEVEC_U"):
-                if(np.shape(P)[0] < args.maxsize):
-                    for i in range(U.shape[0]):
-                        for j in range(U.shape[1]):
-                            fout[k].write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                                          fcode(U[i, j], source_format='free', standard=95) + "\n")
+                    for i in range(LU.shape[0]):
+                        for j in range(LU.shape[1]):
+                            fout[k].write("      LU(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                          fcode(LU[i, j], source_format='free', standard=95) + "\n")
+#            elif(srow == "#ODEVEC_U"):
+#                if(np.shape(P)[0] < args.maxsize):
+#                    for i in range(U.shape[0]):
+#                        for j in range(U.shape[1]):
+#                            fout[k].write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+#                                          fcode(U[i, j], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_JAC"):
                 if (args.packaging=="DENSE"):
                     for i in range(jac.shape[0]):
@@ -418,11 +418,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Preprocessor for OdeVec. A vectorized ODE-solver built for high throughput.')
     parser.add_argument(
-        '--checksparsity',
-        default=False,
-        help='Adds additional output for sparsity information. Attention: needs \
-              quite alot of time, because the LU-decomposition is applied.')
-    parser.add_argument(
         '--commonfile',
         default='src/odevec_commons.F90',
         help='path to the not preprocessed common file')
@@ -452,14 +447,6 @@ if __name__ == '__main__':
         '--nnz',
         default=0,
         help='Set the number of non-zeroes of the Jacobian. This option is generally not needed and set on its own')
-    parser.add_argument(
-        '--nnz_l',
-        default=0,
-        help='Set the number of non-zeroes of the L matrix. If not set the preprocessor will evaluate the nonzeroes on its own, which might take some time.')
-    parser.add_argument(
-        '--nnz_u',
-        default=0,
-        help='Set the number of non-zeroes of the U matrix. If not set the preprocessor will evaluate the nonzeroes on its own, which might take some time.')
     parser.add_argument(
         '--nvector',
         default=1,
@@ -511,29 +498,18 @@ if __name__ == '__main__':
 
     # only run symbolic LU-decompostion if the system is not too large
     maxsize = args.maxsize
-    if(np.shape(P)[0] < maxsize or args.nnz_l == 0 or args.nnz_u == 0):
+    if(np.shape(P)[0] < maxsize):
         print("#  Evaluating L and U matrices and check for sparsity structure...")
         #Piv, L, D, U = P.LUdecompositionFF()
-        L,U,_ = P.LUdecomposition()
+        LU, Piv = P.LUdecomposition_Simple()
 
     # save information for sparsity structure
     if(args.nnz!=0):
         nnz = args.nnz
     else:
         nnz = P.nnz()
-    if(args.nnz_l!=0):
-        nnz_l = args.nnz_l
-    else:
-        nnz_l = L.nnz()
-    if(args.nnz_u!=0):
-        nnz_u = args.nnz_u
-    else:
-        nnz_u = U.nnz()
 
     print("#  NNZs in Jacobian: " + str(nnz) + " | Sparsity: " + str(float(nnz)/(neq*neq)))
-    print("#  NNZs in L: " + str(nnz_l) + "        | Sparsity: " + str(float(nnz_l)/(neq*neq)))
-    print("#  NNZs in U: " + str(nnz_u) + "        | Sparsity: " + str(float(nnz_u)/(neq*neq)))
-    print("#  NNZs in LU: " + str(nnz_l+nnz_u) + "      | Sparsity: " + str(float(nnz_l+nnz_u)/(neq*neq)))
 
     # Choose packaging
     if(args.packaging=="CSC"):
@@ -564,14 +540,14 @@ if __name__ == '__main__':
     if(args.sparsity_structure=="True"):
         print("#  Sparsity structures...")
         P.print_nonzero()
-        L.print_nonzero()
-        U.print_nonzero()
+#        L.print_nonzero()
+#        U.print_nonzero()
     if(np.shape(P)[0] < maxsize):
         print("sparsity structure of L:")
-        L.print_nonzero()
+#        L.print_nonzero()
     if(np.shape(P)[0] < maxsize):
         print("sparsity structure of U:")
-        U.print_nonzero()
+#        U.print_nonzero()
 
     print("#------------------------------------------------------------------#")
     print("#        OdeVec preprocessing done!                                #")

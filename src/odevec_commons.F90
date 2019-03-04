@@ -52,9 +52,7 @@ module odevec_commons
 !NEC$ ivdep
     do i=1,this%nvector
 
-#ODEVEC_L
-
-#ODEVEC_U
+#ODEVEC_LU
 
     end do
   end subroutine GetLU

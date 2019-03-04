@@ -10,6 +10,7 @@ module odevec_main
     integer :: iterator                                     !> iterator
     integer :: order                                        !> current order
 !    integer :: successes, necessary_successes
+    logical :: UpdateJac
 
     double precision :: rtol                                !> relative tolerance
     double precision :: atol                                !> absolute tolerance
@@ -163,6 +164,7 @@ contains
     lte_iterator  = 0
     conv_iterator = 0
     conv_failed   = 0
+    this%UpdateJac = .TRUE.
 !    this%successes     = 0
 !    this%necessary_successes = this%order + 1
 
@@ -178,11 +180,15 @@ contains
       call PredictSolution(this,this%y_NS,this%en)
       y(:,:) = this%y_NS(:,:,0)
 
-      if (this%LU_PRESENT) then
-        call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
-      else
-        call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
-        call LUDecompose(this,this%LU,this%Piv)
+      if (this%UpdateJac) then
+        if (this%LU_PRESENT) then
+          call GetLU(this,this%coeff(this%order,0),y,dt,this%LU,this%Piv)
+          this%Piv = [(i, i=1, this%neq)]
+        else
+          call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
+          call LUDecompose(this,this%LU,this%Piv)
+        end if
+        this%UpdateJac = .FALSE.
       end if
 
       conv_iterator = 0
@@ -221,6 +227,7 @@ contains
             print *, "ODEVEC: Convergence failed! Abortion, because timestep too small."
             stop
           end if
+          this%UpdateJac = .TRUE.
           cycle predictor
         end if
       end do corrector
@@ -236,6 +243,7 @@ contains
         call ResetSystem(this,dt_scale,dt,this%y_NS)
         !if (dt .lt. this%dt_min) stop
         lte_iterator = lte_iterator + 1
+        this%UpdateJac = .TRUE.
         cycle predictor
       else
         success = .TRUE.
