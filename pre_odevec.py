@@ -314,6 +314,8 @@ def ReplacePragmas(fh_list, fout):
                 fout[k].write("    integer :: nnz_u=" + str(nnz_u) + "\n")
             elif(srow == "#ODEVEC_REACTIONS"):
                 fout[k].write("    integer :: nrea=" + str(nrea) + "\n")
+            elif(srow == "#ODEVEC_DT_MIN"):
+                fout[k].write( "    this%dt_min =" + str(args.dt_min) + "\n")
             else:
                 srow = row.strip()
                 fout[k].write(row)
@@ -409,17 +411,17 @@ if __name__ == '__main__':
     print("#        Running OdeVec Preprocessing                              #")
     print("#        Commit Hash: " + str(commit) + "                                   #")
     print("#------------------------------------------------------------------#")
-    # parsing
+
+    # ---------------- parsing -----------------------------------------------#
+    # Please note: ordering alphabatically with parsing argument
+    # ------------------------------------------------------------------------#
     parser = argparse.ArgumentParser(
         description='Preprocessor for OdeVec. A vectorized ODE-solver built for high throughput.')
     parser.add_argument(
-        '--solverfile',
-        default='src/odevec.F90',
-        help='path to the not preprocessed solver file')
-    parser.add_argument(
-        '--solverout',
-        default='build/odevec.f90',
-        help='path to the solver output file')
+        '--checksparsity',
+        default=False,
+        help='Adds additional output for sparsity information. Attention: needs \
+              quite alot of time, because the LU-decomposition is applied.')
     parser.add_argument(
         '--commonfile',
         default='src/odevec_commons.F90',
@@ -429,31 +431,23 @@ if __name__ == '__main__':
         default='build/odevec_commons.f90',
         help='path to the output common file')
     parser.add_argument(
-        '--krome_setupfile',
-        default=None,
-        help='path to an extra file from krome providing the ode')
-    parser.add_argument(
-        '--nvector',
-        default=1,
-        type=int,
-        required=True,
-        help='set vector length for the solver')
-    parser.add_argument(
-        '--checksparsity',
-        default=False,
-        help='Adds additional output for sparsity information. Attention: needs quite alot of time, because the LU-decomposition is applied.')
-    parser.add_argument(
-        '--ordering',
-        default=None,
-        help='preorder algorithm with a common algorithm')
-    parser.add_argument(
         '--example',
         default="PRIMORDIAL",
         help='pre-defined networks to solve')
     parser.add_argument(
-        '--packaging',
-        default="DENSE",
-        help='Adds a sparse packaging format like CSC/CSR to the solver.')
+        '--krome_setupfile',
+        default=None,
+        help='path to an extra file from krome providing the ode')
+    parser.add_argument(
+        '--maxsize',
+        type=int,
+        default=5,
+        help='maximum size of the Jacobian, which should still be symbolically LU-decomposed')
+    parser.add_argument(
+        '--dt_min',
+        default=1e-10,
+        required=False,
+        help='change minimal timestep')
     parser.add_argument(
         '--nnz',
         default=0,
@@ -467,20 +461,40 @@ if __name__ == '__main__':
         default=0,
         help='Set the number of non-zeroes of the U matrix. If not set the preprocessor will evaluate the nonzeroes on its own, which might take some time.')
     parser.add_argument(
-        '--maxsize',
+        '--nvector',
+        default=1,
         type=int,
-        default=5,
-        help='maximum size of the Jacobian, which should still be symbolically LU-decomposed')
+        required=True,
+        help='set vector length for the solver')
+    parser.add_argument(
+        '--ordering',
+        default=None,
+        help='preorder algorithm with a common algorithm')
+    parser.add_argument(
+        '--packaging',
+        default="DENSE",
+        help='Adds a sparse packaging format like CSC/CSR to the solver.')
+    parser.add_argument(
+        '--solverfile',
+        default='src/odevec.F90',
+        help='path to the not preprocessed solver file')
+    parser.add_argument(
+        '--solverout',
+        default='build/odevec.f90',
+        help='path to the solver output file')
     parser.add_argument(
         '--sparsity_structure',
         default=False,
         help='Print sparsity structure of the matrices to stdout.')
+
     args = parser.parse_args()
 
     if (args.krome_setupfile != None):
         args.example="KROME"
-    # get right-hand-side
-    y, rhs, nvector, neq, maxorder, nrea = GetSystemToSolve(args.nvector,example=args.example,kromefile=args.krome_setupfile)
+
+    # get right-hand-side and other
+    y, rhs, nvector, neq, maxorder, nrea = \
+            GetSystemToSolve(args.nvector,example=args.example,kromefile=args.krome_setupfile)
 
     # calculate jacobian
     jac = rhs.jacobian(y)

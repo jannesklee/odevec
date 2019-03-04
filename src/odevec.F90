@@ -88,7 +88,8 @@ contains
       end do
     end do
 
-    this%dt_min = 1e-10
+#ODEVEC_DT_MIN
+
   end subroutine
 
 
