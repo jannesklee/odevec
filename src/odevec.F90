@@ -20,6 +20,7 @@ module odevec_main
     double precision, pointer, dimension(:,:) :: y          !> current solution
                                                             !> array | often y_NS(:,:,0)
     integer         , pointer, dimension(:)   :: Piv        !> pivoting vector
+    integer         , pointer, dimension(:)   :: Perm       !> permutation vector
     double precision, pointer, dimension(:,:) :: en         !> correction vector
     double precision, pointer, dimension(:,:) :: en_old     !> old corr. vector
     double precision, pointer, dimension(:,:) :: den        !> corrector of en
@@ -55,6 +56,7 @@ contains
     allocate( &
               this%y(this%nvector,this%neq), &
               this%Piv(this%neq), &
+              this%Perm(this%neq), &
               this%en(this%nvector,this%neq), &
               this%en_old(this%nvector,this%neq), &
               this%den(this%nvector,this%neq), &
@@ -91,6 +93,8 @@ contains
 
 #ODEVEC_DT_MIN
 
+#ODEVEC_PERMUTATIONS
+
   end subroutine
 
 
@@ -101,7 +105,7 @@ contains
     integer :: err
 
     deallocate(this%y,this%en,this%en_old,this%den,this%den_tmp,this%inv_weight_2, &
-               this%rhs,this%res,this%coeff,this%tautable,this%LU, &
+               this%rhs,this%Piv,this%Perm,this%res,this%coeff,this%tautable,this%LU, &
                this%y_NS, &
                stat=err)
 
@@ -506,7 +510,8 @@ contains
       do j = 1,k-1
 !NEC$ ivdep
         do i = 1,this%nvector
-          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,Piv(k),j)*this%den_tmp(i,j)
+!          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,Piv(k),j)*this%den_tmp(i,j)
+          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,k,j)*this%den_tmp(i,j)
         end do
       end do
 !NEC$ ivdep
@@ -527,13 +532,15 @@ contains
       do j = k+1,this%neq
 !NEC$ ivdep
         do i = 1,this%nvector
-          den(i,k) = den(i,k) + LU(i,Piv(k),j)*den(i,j)
+!          den(i,k) = den(i,k) + LU(i,Piv(k),j)*den(i,j)
+          den(i,k) = den(i,k) + LU(i,k,j)*den(i,j)
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
         den(i,k) = this%den_tmp(i,k) - den(i,k)
-        den(i,k) = den(i,k)/LU(i,Piv(k),k)
+!        den(i,k) = den(i,k)/LU(i,Piv(k),k)
+        den(i,k) = den(i,k)/LU(i,k,k)
       end do
     end do
   end subroutine SolveLU
@@ -554,30 +561,72 @@ contains
     intent (out)   :: p
 
     ! initialize P
-    P = [(i, i=1, this%neq)]
-    do k = 1,this%neq-1
-      maxloc_ij(:) = maxloc(abs(A(:,P(k:),k)))
-      kmax = maxloc_ij(2) + k - 1
-      if (kmax /= k ) P([k, kmax]) = P([kmax, k])
-    end do
+!    P = [(i, i=1, this%neq)]
+!    do k = 1,this%neq-1
+!      maxloc_ij(:) = maxloc(abs(A(:,P(k:),k)))
+!      maxloc_ij(:) = maxloc(abs(A(:,P(k:),k)))
+!      kmax = maxloc_ij(2) + k - 1
+!      if (kmax /= k ) P([k, kmax]) = P([kmax, k])
+!    end do
 
     do k = 1,this%neq-1
       do j = k+1,this%neq
+!NEC$ ivdep
         do i = 1,this%nvector
-          A(i,P(j),k) = A(i,P(j),k) / A(i,P(k),k)
+!          A(i,P(j),k) = A(i,P(j),k) / A(i,P(k),k)
+          A(i,j,k) = A(i,j,k) / A(i,k,k)
         end do
       end do
       do j = k+1,this%neq
         do m = k+1,this%neq
 !NEC$ ivdep
           do i = 1,this%nvector
-            A(i,P(m),j) = A(i,P(m),j) - A(i,P(m),k) * A(i,P(k),j)
+!            A(i,P(m),j) = A(i,P(m),j) - A(i,P(m),k) * A(i,P(k),j)
+            A(i,m,j) = A(i,m,j) - A(i,m,k) * A(i,k,j)
           end do
         end do
       end do
     end do
 
   end subroutine LUDecompose
+
+  !> Get L and U from Jacobian (in-place transformation)
+  !!
+  !! Based on dgetrf from LAPACK. LU-decomposition with partial pivoting. Taken
+  !! and modified from https://rosettacode.org/wiki/LU_decomposition#Fortran.
+  subroutine LUDecompose(this,A,P)
+    implicit none
+    type(odevec)   :: this
+    integer        :: i, j, k, m, kmax
+    double precision, dimension(this%nvector,this%neq,this%neq) :: A
+    integer,          dimension(this%neq) :: P
+    integer,          dimension(2) :: maxloc_ij
+    intent (inout) :: A
+    intent (out)   :: p
+
+    do k = 1,this%neq-1
+      do j = k+1,this%neq
+!NEC$ ivdep
+        do i = 1,this%nvector
+!          A(i,P(j),k) = A(i,P(j),k) / A(i,P(k),k)
+          A(i,j,k) = A(i,j,k) / A(i,k,k)
+        end do
+      end do
+      do j = k+1,this%neq
+        do m = k+1,this%neq
+!NEC$ ivdep
+          do i = 1,this%nvector
+!            A(i,P(m),j) = A(i,P(m),j) - A(i,P(m),k) * A(i,P(k),j)
+            A(i,m,j) = A(i,m,j) - A(i,m,k) * A(i,k,j)
+          end do
+        end do
+      end do
+    end do
+
+  end subroutine LUDecompose
+
+
+
 
 
   !> Calculates the residuum

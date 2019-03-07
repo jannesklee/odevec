@@ -9,7 +9,8 @@ Jacobian and preordering of the latter.
 """
 
 from __future__ import print_function
-from sympy import symbols, Matrix, eye, zeros, fcode, SparseMatrix, lambdify, nsimplify
+from sympy import symbols, Matrix, eye, zeros, fcode, SparseMatrix, \
+                  lambdify, simplify, factor, cancel, apart
 from scipy import sparse
 from shutil import copyfile
 from subprocess import check_output
@@ -57,20 +58,20 @@ def GetSystemToSolve(nvector,example,kromefile=""):
     # general global constants and printouts
     nvector = nvector
     maxorder = 5
-    print("#  Setting up system...")
+    print("#  Setting up system..")
     print("#  Vector length \"nvector\":", nvector)
 
     #------------------------------------------------------------------------------#
     # Robertson's example
     if (example=="ROBER"):
-        print("#  Test: ROBER")
+        print("#  Setup: ROBER test")
 
         neq = 3
         k = 0
         nrea = 0
 
 	# define sympy symbols
-        y = symbols('y(i\,1:%d)'%(neq+1))
+        y = list(symbols('y(i\,1:%d)'%(neq+1)))
 
         rhs = Matrix([-0.04*y[0]+1e4*y[1]*y[2],
 		      0.04*y[0]-3e7*y[1]*y[1]-1e4*y[1]*y[2],
@@ -78,7 +79,7 @@ def GetSystemToSolve(nvector,example,kromefile=""):
 
     # Primordial network with 16 different species
     elif (example=="PRIMORDIAL"):
-        print("#  Test: PRIMORDIAL")
+        print("#  Setup: PRIMORDIAL test")
 
         neq = 16
         nrea = 38
@@ -102,8 +103,8 @@ def GetSystemToSolve(nvector,example,kromefile=""):
         idx_dummy = 15
 
 	# define sympy symbols
-        y = symbols('y(i\,1:%d)' % (neq + 1))
-        k = symbols('k(i\,1:%d)' % (nrea + 1))
+        y = list(symbols('y(i\,1:%d)' % (neq + 1)))
+        k = list(symbols('k(i\,1:%d)' % (nrea + 1)))
 
         # RHS of primordial network
         rhs = Matrix([- k[0] * y[idx_H] * y[idx_E] + 2.e0 * k[0] * y[idx_H] * y[idx_E]
@@ -230,6 +231,7 @@ def GetSystemToSolve(nvector,example,kromefile=""):
 
     # Arbitrary networks for usage in KROME
     elif (example=="KROME"):
+        print("#  Setup: KROME file read in")
 
         exec(open(kromefile).read())
 
@@ -264,20 +266,25 @@ def ReplacePragmas(fh_list, fout):
                 if(np.shape(P)[0] < args.maxsize):
                     for i in range(LU.shape[0]):
                         for j in range(LU.shape[1]):
-                            fout[k].write("      LU(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                                          fcode(LU[i, j], source_format='free', standard=95) + "\n")
+#                            if (not LU[i,j] == 0.0):
+                                fout[k].write("      LU(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                              fcode(LU[i, j], source_format='free', standard=95) + "\n")
 #            elif(srow == "#ODEVEC_U"):
 #                if(np.shape(P)[0] < args.maxsize):
 #                    for i in range(U.shape[0]):
 #                        for j in range(U.shape[1]):
 #                            fout[k].write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
 #                                          fcode(U[i, j], source_format='free', standard=95) + "\n")
+            elif(srow == "#ODEVEC_PERMUTATIONS"):
+                fout[k].write( "    this%Perm = " + 
+                                          fcode(perm+1, source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_JAC"):
                 if (args.packaging=="DENSE"):
                     for i in range(jac.shape[0]):
                         for j in range(jac.shape[1]):
-                            fout[k].write("      jac(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                                          fcode(P[i, j], source_format='free', standard=95) + "\n")
+#                            if (not P[i,j] == 0.0):
+                                fout[k].write("      jac(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                              fcode(P[i, j], source_format='free', standard=95) + "\n")
                 elif (args.packaging=="COO"):
                     for i in range(nnz):
                         fout[k].write("     jac%ind1(i,"+ str(i+1) + ") = " +
@@ -291,8 +298,9 @@ def ReplacePragmas(fh_list, fout):
                         fout[k].write("     jac%ind1(i,"+ str(i+1) + ")")
             elif(srow == "#ODEVEC_RHS"):
                 for i in range(rhs.shape[0]):
-                    fout[k].write("      rhs(i," + str(i + 1) + ") = " +
-                                  fcode(rhs[i], source_format='free', standard=95) + "\n")
+#                    if (not rhs[i] == 0.0):
+                        fout[k].write("      rhs(i," + str(i + 1) + ") = " +
+                                      fcode(rhs[i], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_LU_PRESENT"):
                 if(np.shape(P)[0] < args.maxsize):
                     fout[k].write("      logical :: LU_PRESENT = .TRUE.")
@@ -369,8 +377,8 @@ def ReorderSystemCMK(P,y,rhs):
         for j in range(Psci.shape[1]):
             P_order[i,j] = P[perm[i],perm[j]]
 
-    print("\nFinished reordering with CMK-Algorithm...")
-    print("Permutation list", perm, "\n")
+    print("#  Reordering with CMK-Algorithm..")
+    print("#  Permutation list", perm, "\n")
 
     return P_order,y_tmp,rhs_tmp,perm
 
@@ -385,17 +393,47 @@ def ReorderSystemInvert(P,y,rhs):
 
     perm = range(len(rhs))[::-1]
 
-    P_order = zeros(neq,neq)
+    P_order = SparseMatrix.zeros(neq)
     rhs_order = rhs
     y_order = y
     for i in range(neq):
         for j in range(neq):
             P_order[i,j] = P[perm[i],perm[j]]
 
-    print("\nFinished reordering with simple inversed numbering...")
-    print("Permutation list", perm, "\n")
-    return [P_order,y_order,rhs_order,perm]
+    print("#  Reordering: Inversed indices..")
+    print("#  Permutation list", perm, "\n")
+    return P_order,y_order,rhs_order,perm
 
+
+def ReorderSystemFewestFirst(P,y,rhs):
+    """
+    BUG: Reordering is not working properly at the moment.
+    """
+
+    perm = np.arange(len(rhs))
+
+    sorter = np.zeros(neq)
+    for i in range(neq):
+        sorter[i] = P[:,i].nnz() + P[i,:].nnz() - 1
+
+    sort_indices = sorter.argsort()
+    perm = perm[sort_indices]
+
+    P_order = P
+    y_order = y
+    rhs_order = rhs
+#    P_order = SparseMatrix.zeros(neq)
+#    rhs_order = rhs
+#    y_order = y
+#    for i in range(neq):
+#        rhs_order[i] = rhs[perm[i]]
+#        y_order[i] = y[perm[i]]
+#        for j in range(neq):
+#            P_order[i,j] = P[perm[i],perm[j]]
+
+    print("#  Reordering: putting fewest reactions first..")
+
+    return P_order, y_order, rhs_order, perm
 
 # command line execution
 if __name__ == '__main__':
@@ -492,16 +530,28 @@ if __name__ == '__main__':
 
     # Reorder the system if chosen so
     if(args.ordering=="CMK"):
-        [P, y, rhs, perm] = ReorderSystemCMK(P,y,rhs)
-    if(args.ordering=="INVERT"):
-        [P, y, rhs, perm] = ReorderSystemInvert(P,y,rhs)
+        P, y, rhs, perm = ReorderSystemCMK(P,y,rhs)
+    elif(args.ordering=="INVERT"):
+        P, y, rhs, perm = ReorderSystemInvert(P,y,rhs)
+    elif(args.ordering=="FEWFIRST"):
+        P, y, rhs, perm = ReorderSystemFewestFirst(P,y,rhs)
+    else:
+        perm = np.arange(len(rhs))
+
+    print("#  Simplifying ingoing Jacobian..")
+    for i in range(neq):
+        for j in range(neq):
+            P[i,j] = simplify(P[i,j])
 
     # only run symbolic LU-decompostion if the system is not too large
     maxsize = args.maxsize
     if(np.shape(P)[0] < maxsize):
-        print("#  Evaluating L and U matrices and check for sparsity structure...")
-        #Piv, L, D, U = P.LUdecompositionFF()
+        print("#  Evaluating L and U matrices and check for sparsity structure..")
         LU, Piv = P.LUdecomposition_Simple()
+#        print("#  Simplifying outgoing LU..")
+#        for i in range(neq):
+#            for j in range(neq):
+#                LU[i,j] = apart(LU[i,j])
 
     # save information for sparsity structure
     if(args.nnz!=0):
@@ -509,7 +559,10 @@ if __name__ == '__main__':
     else:
         nnz = P.nnz()
 
-    print("#  NNZs in Jacobian: " + str(nnz) + " | Sparsity: " + str(float(nnz)/(neq*neq)))
+    print("#  NNZs in Jacobian: " + str(P.nnz()) + " | Sparsity: " + str(float(nnz)/(neq*neq)))
+
+    if(np.shape(P)[0] < maxsize):
+        print("#  NNZs in LU-Matrix: " + str(LU.nnz()) + " | Sparsity: " + str(float(nnz)/(neq*neq)))
 
     # Choose packaging
     if(args.packaging=="CSC"):
@@ -532,22 +585,18 @@ if __name__ == '__main__':
         pass
 
     # search for pragmas and replace them with the correct
-    print("#  Replacing pragmas in Fortran source code...")
+    print("#  Replacing pragmas in Fortran source code..")
     ReplacePragmas(fh_list, fout)
     for fout_single in fout: print("#  Wrote out file: " + fout_single.name)
 
     # some command line output
     if(args.sparsity_structure=="True"):
-        print("#  Sparsity structures...")
+        print("#  Sparsity structures..")
+        print("#  sparsity structure of Jacobian:")
         P.print_nonzero()
-#        L.print_nonzero()
-#        U.print_nonzero()
-    if(np.shape(P)[0] < maxsize):
-        print("sparsity structure of L:")
-#        L.print_nonzero()
-    if(np.shape(P)[0] < maxsize):
-        print("sparsity structure of U:")
-#        U.print_nonzero()
+        if(np.shape(P)[0] < maxsize):
+            print("#  sparsity structure of LU:")
+            LU.print_nonzero()
 
     print("#------------------------------------------------------------------#")
     print("#        OdeVec preprocessing done!                                #")
