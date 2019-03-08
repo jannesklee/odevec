@@ -2,11 +2,17 @@
 module odevec_main
   implicit none
 
+  type :: CSC_Matrix
+    double precision, pointer, dimension(:,:) :: sdata
+    integer, pointer, dimension(:) :: u_col_start, l_col_start, row_index
+  end type
+
   type :: odevec
 #ODEVEC_VECTORLENGTH
 #ODEVEC_EQUATIONS
 #ODEVEC_REACTIONS
 #ODEVEC_MAXORDER
+#ODEVEC_NNZ
     integer :: iterator                                     !> iterator
     integer :: order                                        !> current order
 !    integer :: successes, necessary_successes
@@ -31,11 +37,10 @@ module odevec_main
     double precision, pointer, dimension(:,:) :: coeff      !> coefficient matrix
     double precision, pointer, dimension(:,:) :: tautable   !> solution table for
                                                             !> precomputation
-    double precision, pointer, dimension(:,:,:) :: LU       !> LU matrix, also jacobian
-                                                            !! shortly (in-situ replace)
     double precision, pointer, dimension(:,:,:) :: y_NS     !> Nordsieck history array
+#ODEVEC_LU_MATRIX
 #ODEVEC_LU_PRESENT
-
+#ODEVEC_PACKAGING
   end type
 
   ! two different interfaces, whether it is called with y or y_NS
@@ -43,8 +48,14 @@ module odevec_main
     module procedure WeightedNorm1, WeightedNorm2
   end interface
 
-contains
+  interface LUDecompose
+    module procedure LUDecompose_dense, LUDecompose_sparse
+  end interface
+  interface SolveLU
+    module procedure SolveLU_dense, SolveLU_sparse
+  end interface
 
+contains
 
   !> Allocates all memory for bdf-solver
   subroutine InitOdevec(this)
@@ -66,9 +77,11 @@ contains
               this%res(this%nvector,this%neq), &
               this%coeff(6,0:6), &
               this%tautable(this%maxorder+1,0:this%maxorder+1), &
-              this%LU(this%nvector,this%neq,this%neq), &
               this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
               STAT=err)
+
+#ODEVEC_ALLOCATE_LU
+
     if (err.ne.0) then
       print *, "ODEVEC: Memory allocation error. OdeVec could not be intialized."
       stop
@@ -95,24 +108,6 @@ contains
 
 #ODEVEC_PERMUTATIONS
 
-  end subroutine
-
-
-  !> deallocates all memory of the bdf-solver
-  subroutine CloseOdevec(this)
-    implicit none
-    type(odevec) :: this
-    integer :: err
-
-    deallocate(this%y,this%en,this%en_old,this%den,this%den_tmp,this%inv_weight_2, &
-               this%rhs,this%Piv,this%Perm,this%res,this%coeff,this%tautable,this%LU, &
-               this%y_NS, &
-               stat=err)
-
-    if (err.ne.0) then
-      print *, "ODEVEC: Memory deallocation error. OdeVec was not properly closed."
-      stop
-    end if
   end subroutine
 
 
@@ -299,7 +294,6 @@ contains
 
     call SetStepSize(this,dt_scale,y_NS,dt)
   end subroutine
-
 
   !> Calculates the step-sizes and uses according orders
   subroutine CalcStepSizeOrder(this,dt_scale,order)
@@ -488,8 +482,8 @@ contains
   end subroutine PredictSolution
 
 
-  !> Solve the System \f$ LU x=r \f$ with residuum r (res) and return x (den)
-  subroutine SolveLU(this,LU,Piv,res,den)
+  !> Solve the DENSE System \f$ LU x=r \f$ with residuum r (res) and return x (den)
+  subroutine SolveLU_dense(this,LU,Piv,res,den)
     implicit none
     type(odevec)   :: this
     double precision, dimension(this%nvector,this%neq,this%neq) :: LU
@@ -543,14 +537,28 @@ contains
         den(i,k) = den(i,k)/LU(i,k,k)
       end do
     end do
-  end subroutine SolveLU
+  end subroutine SolveLU_dense
 
 
-  !> Get L and U from Jacobian (in-place transformation)
+  !> Solve the SPARSE System \f$ LU x=r \f$ with residuum r (res) and return x (den)
+  subroutine SolveLU_sparse(this,LU,Piv,res,den)
+    implicit none
+    type(odevec)   :: this
+    TYPE(CSC_Matrix) :: LU
+    double precision, dimension(this%nvector,this%neq)          :: res, den
+    integer         , dimension(this%neq)                       :: Piv
+    integer        :: i,j,k
+    intent(in)     :: LU,Piv,res
+    intent(out)    :: den
+
+  end subroutine SolveLU_sparse
+
+
+  !> Get LU from Jacobian for the dense case (in-place transformation)
   !!
   !! Based on dgetrf from LAPACK. LU-decomposition with partial pivoting. Taken
   !! and modified from https://rosettacode.org/wiki/LU_decomposition#Fortran.
-  subroutine LUDecompose(this,A,P)
+  subroutine LUDecompose_dense(this,A,P)
     implicit none
     type(odevec)   :: this
     integer        :: i, j, k, m, kmax
@@ -587,46 +595,57 @@ contains
         end do
       end do
     end do
+  end subroutine LUDecompose_dense
 
-  end subroutine LUDecompose
 
-  !> Get L and U from Jacobian (in-place transformation)
+  !> Get LU with sparse computations
   !!
-  !! Based on dgetrf from LAPACK. LU-decomposition with partial pivoting. Taken
-  !! and modified from https://rosettacode.org/wiki/LU_decomposition#Fortran.
-  subroutine LUDecompose(this,A,P)
+  !! Based on Duff, Erisman and Reid (2017): "Direct Methods for Sparse Matrices"
+  !! Especially, ch. 10.3, pp. 210
+  subroutine LUDecompose_sparse(this,A,P)
     implicit none
-    type(odevec)   :: this
-    integer        :: i, j, k, m, kmax
-    double precision, dimension(this%nvector,this%neq,this%neq) :: A
+    type(odevec) :: this
+    integer        :: i, j, k, jj, kk
+    TYPE(CSC_Matrix) :: A
+    double precision, dimension(this%nvector,this%neq) :: w !< temporary column
+    double precision, dimension(this%nvector) :: alpha
     integer,          dimension(this%neq) :: P
-    integer,          dimension(2) :: maxloc_ij
-    intent (inout) :: A
-    intent (out)   :: p
 
-    do k = 1,this%neq-1
-      do j = k+1,this%neq
+    do k=1,this%neq
+      ! scatter
+      do kk = A%u_col_start(k), A%u_col_start(k+1) - 1
 !NEC$ ivdep
         do i = 1,this%nvector
-!          A(i,P(j),k) = A(i,P(j),k) / A(i,P(k),k)
-          A(i,j,k) = A(i,j,k) / A(i,k,k)
+          w(i,A%row_index(kk)) =  A%sdata(i,kk)
         end do
       end do
-      do j = k+1,this%neq
-        do m = k+1,this%neq
+
+      ! calculate LU
+      do kk = A%u_col_start(k), A%l_col_start(k) - 1
+        j = A%row_index(kk)
+!NEC$ ivdep
+        do i = 1,this%nvector
+          alpha(i) = -w(i,j)/A%sdata(i,A%l_col_start(j))
+          w(i,j) = alpha(i)
+        end do
+        do jj = A%l_col_start(i)+1,A%u_col_start(i+1)-1
 !NEC$ ivdep
           do i = 1,this%nvector
-!            A(i,P(m),j) = A(i,P(m),j) - A(i,P(m),k) * A(i,P(k),j)
-            A(i,m,j) = A(i,m,j) - A(i,m,k) * A(i,k,j)
+            w(i,A%row_index(jj)) = w(i,A%row_index(jj)) + alpha(i)*A%sdata(i,jj)
           end do
+        end do
+      end do
+
+      ! gather
+      do kk = A%u_col_start(k), A%u_col_start(k+1) - 1
+!NEC$ ivdep
+        do i = 1,this%nvector
+          A%sdata(i,kk) = w(i,A%row_index(kk))
         end do
       end do
     end do
 
-  end subroutine LUDecompose
-
-
-
+  end subroutine LUDecompose_sparse
 
 
   !> Calculates the residuum
@@ -695,5 +714,28 @@ contains
 
     return
   end function tau
+
+
+  !> deallocates all memory of the bdf-solver
+  subroutine CloseOdevec(this)
+    implicit none
+    type(odevec) :: this
+    integer :: err
+
+    deallocate(this%y,this%en,this%en_old,this%den,this%den_tmp,this%inv_weight_2, &
+               this%rhs,this%Piv,this%Perm,this%res,this%coeff,this%tautable, &
+               this%y_NS, &
+               stat=err)
+
+#ODEVEC_DEALLOCATE_LU
+
+    if (err.ne.0) then
+      print *, "ODEVEC: Memory deallocation error. OdeVec was not properly closed."
+      stop
+    end if
+  end subroutine
+
+
+
 
 end module odevec_main

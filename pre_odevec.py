@@ -276,10 +276,10 @@ def ReplacePragmas(fh_list, fout):
 #                            fout[k].write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
 #                                          fcode(U[i, j], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_PERMUTATIONS"):
-                fout[k].write( "    this%Perm = " + 
+                fout[k].write( "    this%Perm = " +
                                           fcode(perm+1, source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_JAC"):
-                if (args.packaging=="DENSE"):
+                if (args.packaging=="DENSE" or args.packaging=="CSC"):
                     for i in range(jac.shape[0]):
                         for j in range(jac.shape[1]):
 #                            if (not P[i,j] == 0.0):
@@ -293,9 +293,9 @@ def ReplacePragmas(fh_list, fout):
                                           fcode(P.col_list()[i][1], source_format='free', standard=95) + "\n")
                         fout[k].write("     jac%values(i,"+ str(i+1) + ") = " +
                                           fcode(P.col_list()[i][2], source_format='free', standard=95) + "\n")
-                elif (args.packaging=="CSC"):
-                    for i in range(nnz):
-                        fout[k].write("     jac%ind1(i,"+ str(i+1) + ")")
+#                elif (args.packaging=="CSC"):
+#                    for i in range(nnz):
+#                        fout[k].write("     jac%ind1(i,"+ str(i+1) + ")")
             elif(srow == "#ODEVEC_RHS"):
                 for i in range(rhs.shape[0]):
 #                    if (not rhs[i] == 0.0):
@@ -303,11 +303,36 @@ def ReplacePragmas(fh_list, fout):
                                       fcode(rhs[i], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_LU_PRESENT"):
                 if(np.shape(P)[0] < args.maxsize):
-                    fout[k].write("      logical :: LU_PRESENT = .TRUE.")
+                    fout[k].write("    logical :: LU_PRESENT = .TRUE. \n")
                 else:
-                    fout[k].write("      logical :: LU_PRESENT = .FALSE.")
+                    fout[k].write("    logical :: LU_PRESENT = .FALSE. \n")
+            elif(srow == "#ODEVEC_ALLOCATE_LU"):
+                if (args.packaging=="DENSE"):
+                    fout[k].write( "    allocate(this%LU(this%nvector,this%neq,this%neq),STAT=err) \n")
+                if (args.packaging=="CSC"):
+                    fout[k].write( "    allocate( & \n\
+             this%LU%sdata(this%nvector,this%nnz), & \n\
+             this%LU%u_col_start(this%neq+1), & \n\
+             this%LU%l_col_start(this%neq+1), & \n\
+             this%LU%row_index(this%nnz), & \n\
+             STAT=err) \n")
+            elif(srow == "#ODEVEC_DEALLOCATE_LU"):
+                if (args.packaging=="DENSE"):
+                    fout[k].write( "    deallocate(this%LU) \n")
+                if (args.packaging=="CSC"):
+                    fout[k].write( "    deallocate( & \n \
+                                    this%LU%sdata, & \n \
+                                    this%LU%u_col_start, & \n \
+                                    this%LU%l_col_start, & \n \
+                                    this%LU%row_index) \n")
             elif(srow == "#ODEVEC_VECTORLENGTH"):
                 fout[k].write( "    integer :: nvector=" + str(nvector) + "\n")
+            elif(srow == "#ODEVEC_LU_MATRIX"):
+                if (args.packaging=="DENSE"):
+                    fout[k].write( "    double precision, pointer, " +
+                                   "dimension(:,:,:) :: LU       !> jacobian & LU Matrix \n")
+                elif (args.packaging=="CSC"):
+                    fout[k].write( "    TYPE(CSC_Matrix) :: LU      !> jacobian & LU Matrix\n")
             elif(srow == "#ODEVEC_COMMON_MODULE"):
                 fout[k].write("      use" + "\n")
             elif(srow == "#ODEVEC_EQUATIONS"):
@@ -316,10 +341,11 @@ def ReplacePragmas(fh_list, fout):
                 fout[k].write("    integer :: maxorder=" + str(maxorder) + "\n")
             elif(srow == "#ODEVEC_NNZ"):
                 fout[k].write("    integer :: nnz=" + str(nnz) + "\n")
-            elif(srow == "#ODEVEC_NNZ_L"):
-                fout[k].write("    integer :: nnz_l=" + str(nnz_l) + "\n")
-            elif(srow == "#ODEVEC_NNZ_U"):
-                fout[k].write("    integer :: nnz_u=" + str(nnz_u) + "\n")
+            elif(srow == "#ODEVEC_PACKAGING"):
+                if (args.packaging=="DENSE"):
+                    fout[k].write("    character(len=10) :: packaging=\"dense\" \n")
+                elif (args.packaging=="CSC"):
+                    fout[k].write("    character(len=10) :: packaging=\"csc\" \n")
             elif(srow == "#ODEVEC_REACTIONS"):
                 fout[k].write("    integer :: nrea=" + str(nrea) + "\n")
             elif(srow == "#ODEVEC_DT_MIN"):
