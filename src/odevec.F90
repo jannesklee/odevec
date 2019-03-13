@@ -79,6 +79,10 @@ contains
               this%tautable(this%maxorder+1,0:this%maxorder+1), &
               this%y_NS(this%nvector,this%neq,0:this%maxorder+1), &
               STAT=err)
+    if (err.ne.0) then
+      print *, "ODEVEC: Memory allocation error. OdeVec could not be intialized."
+      stop
+    end if
 
 #ODEVEC_ALLOCATE_LU
 
@@ -106,7 +110,11 @@ contains
 
 #ODEVEC_DT_MIN
 
+    ! permutations
 #ODEVEC_PERMUTATIONS
+
+    ! sparsity patterns
+#ODEVEC_SET_LU_SPARSITY
 
   end subroutine
 

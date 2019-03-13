@@ -14,6 +14,7 @@ from sympy import symbols, Matrix, eye, zeros, fcode, SparseMatrix, \
 from scipy import sparse
 from shutil import copyfile
 from subprocess import check_output
+import sys
 import os
 import numpy as np
 import argparse
@@ -266,36 +267,31 @@ def ReplacePragmas(fh_list, fout):
                 if(np.shape(P)[0] < args.maxsize):
                     for i in range(LU.shape[0]):
                         for j in range(LU.shape[1]):
-#                            if (not LU[i,j] == 0.0):
+                            if (not LU[i,j] == 0.0):
                                 fout[k].write("      LU(i," + str(i + 1) + "," + str(j + 1) + ") = " +
                                               fcode(LU[i, j], source_format='free', standard=95) + "\n")
-#            elif(srow == "#ODEVEC_U"):
-#                if(np.shape(P)[0] < args.maxsize):
-#                    for i in range(U.shape[0]):
-#                        for j in range(U.shape[1]):
-#                            fout[k].write("      U(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-#                                          fcode(U[i, j], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_PERMUTATIONS"):
                 fout[k].write( "    this%Perm = " +
-                                          fcode(perm+1, source_format='free', standard=95) + "\n")
+                              fcode(perm+1, source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_JAC"):
-                if (args.packaging=="DENSE" or args.packaging=="CSC"):
+                if (args.packaging=="DENSE"):
                     for i in range(jac.shape[0]):
                         for j in range(jac.shape[1]):
 #                            if (not P[i,j] == 0.0):
                                 fout[k].write("      jac(i," + str(i + 1) + "," + str(j + 1) + ") = " +
                                               fcode(P[i, j], source_format='free', standard=95) + "\n")
                 elif (args.packaging=="COO"):
-                    for i in range(nnz):
+                    for i in range(P.nnz()):
                         fout[k].write("     jac%ind1(i,"+ str(i+1) + ") = " +
                                           fcode(P.col_list()[i][0], source_format='free', standard=95) + "\n")
                         fout[k].write("     jac%ind2(i,"+ str(i+1) + ") = " +
                                           fcode(P.col_list()[i][1], source_format='free', standard=95) + "\n")
                         fout[k].write("     jac%values(i,"+ str(i+1) + ") = " +
                                           fcode(P.col_list()[i][2], source_format='free', standard=95) + "\n")
-#                elif (args.packaging=="CSC"):
-#                    for i in range(nnz):
-#                        fout[k].write("     jac%ind1(i,"+ str(i+1) + ")")
+                elif (args.packaging=="CSC"):
+                    for i in range(P.nnz()):
+                        fout[k].write("      jac(i," + str(P.col_list()[i][0]+1) + "," + str(P.col_list()[i][1] + 1) + ") = " +
+                                      fcode(P.col_list()[i][2], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_RHS"):
                 for i in range(rhs.shape[0]):
 #                    if (not rhs[i] == 0.0):
@@ -308,14 +304,17 @@ def ReplacePragmas(fh_list, fout):
                     fout[k].write("    logical :: LU_PRESENT = .FALSE. \n")
             elif(srow == "#ODEVEC_ALLOCATE_LU"):
                 if (args.packaging=="DENSE"):
-                    fout[k].write( "    allocate(this%LU(this%nvector,this%neq,this%neq),STAT=err) \n")
+                    fout[k].write( "    allocate(this%LU(this%nvector,this%neq,this%neq),STAT=err) \n" +
+                                   "    this%LU(:,:,:) = 0.0")
                 if (args.packaging=="CSC"):
                     fout[k].write( "    allocate( & \n\
-             this%LU%sdata(this%nvector,this%nnz), & \n\
-             this%LU%u_col_start(this%neq+1), & \n\
-             this%LU%l_col_start(this%neq+1), & \n\
-             this%LU%row_index(this%nnz), & \n\
-             STAT=err) \n")
+              this%LU%sdata(this%nvector,this%nnz), & \n\
+              this%LU%u_col_start(this%neq+1), & \n\
+              this%LU%l_col_start(this%neq+1), & \n\
+              this%LU%row_index(this%nnz), & \n\
+              STAT=err) \n")
+                    fout[k].write( "    this%LU%sdata(:,:) = 0.0 \n")
+
             elif(srow == "#ODEVEC_DEALLOCATE_LU"):
                 if (args.packaging=="DENSE"):
                     fout[k].write( "    deallocate(this%LU) \n")
@@ -325,6 +324,13 @@ def ReplacePragmas(fh_list, fout):
                                     this%LU%u_col_start, & \n \
                                     this%LU%l_col_start, & \n \
                                     this%LU%row_index) \n")
+            elif(srow == "#ODEVEC_SET_LU_SPARSITY"):
+                fout[k].write( "    this%LU%row_index = " +
+                        fcode(np.array(row_index[:])+1, source_format='free', standard=95) + "\n")
+                fout[k].write( "    this%LU%u_col_start = " +
+                        fcode(np.array(u_col_start[:])+1, source_format='free', standard=95) + "\n")
+                fout[k].write( "    this%LU%l_col_start = " +
+                        fcode(np.array(l_col_start[:])+1, source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_VECTORLENGTH"):
                 fout[k].write( "    integer :: nvector=" + str(nvector) + "\n")
             elif(srow == "#ODEVEC_LU_MATRIX"):
@@ -340,7 +346,7 @@ def ReplacePragmas(fh_list, fout):
             elif(srow == "#ODEVEC_MAXORDER"):
                 fout[k].write("    integer :: maxorder=" + str(maxorder) + "\n")
             elif(srow == "#ODEVEC_NNZ"):
-                fout[k].write("    integer :: nnz=" + str(nnz) + "\n")
+                fout[k].write("    integer :: nnz=" + str(LU.nnz()) + "\n")
             elif(srow == "#ODEVEC_PACKAGING"):
                 if (args.packaging=="DENSE"):
                     fout[k].write("    character(len=10) :: packaging=\"dense\" \n")
@@ -393,6 +399,7 @@ def ReorderSystemCMK(P,y,rhs):
     j = P1[:, 0]
 
     Psci = sparse.csc_matrix((data.astype(int), (i, j)))
+
     # apply Cuthill-McKee-Algorithm
     perm = sparse.csgraph.reverse_cuthill_mckee(Psci, symmetric_mode=False)
 
@@ -448,14 +455,14 @@ def ReorderSystemFewestFirst(P,y,rhs):
     P_order = P
     y_order = y
     rhs_order = rhs
-#    P_order = SparseMatrix.zeros(neq)
-#    rhs_order = rhs
-#    y_order = y
-#    for i in range(neq):
-#        rhs_order[i] = rhs[perm[i]]
-#        y_order[i] = y[perm[i]]
-#        for j in range(neq):
-#            P_order[i,j] = P[perm[i],perm[j]]
+    P_order = SparseMatrix.zeros(neq)
+    rhs_order = rhs
+    y_order = y
+    for i in range(neq):
+        rhs_order[i] = rhs[perm[i]]
+        y_order[i] = y[perm[i]]
+        for j in range(neq):
+            P_order[i,j] = P[perm[i],perm[j]]
 
     print("#  Reordering: putting fewest reactions first..")
 
@@ -508,10 +515,6 @@ if __name__ == '__main__':
         required=False,
         help='change minimal timestep')
     parser.add_argument(
-        '--nnz',
-        default=0,
-        help='Set the number of non-zeroes of the Jacobian. This option is generally not needed and set on its own')
-    parser.add_argument(
         '--nvector',
         default=1,
         type=int,
@@ -556,47 +559,49 @@ if __name__ == '__main__':
 
     # Reorder the system if chosen so
     if(args.ordering=="CMK"):
-        P, y, rhs, perm = ReorderSystemCMK(P,y,rhs)
+        P_order, y_order, rhs_order, perm = ReorderSystemCMK(P,y,rhs)
     elif(args.ordering=="INVERT"):
-        P, y, rhs, perm = ReorderSystemInvert(P,y,rhs)
+        P_order, y_order, rhs_order, perm = ReorderSystemInvert(P,y,rhs)
     elif(args.ordering=="FEWFIRST"):
-        P, y, rhs, perm = ReorderSystemFewestFirst(P,y,rhs)
+        P_order, y_order, rhs_order, perm = ReorderSystemFewestFirst(P,y,rhs)
     else:
+        P_order = P
+        y_order = y
+        rhs_order = rhs
         perm = np.arange(len(rhs))
-
-    print("#  Simplifying ingoing Jacobian..")
-    for i in range(neq):
-        for j in range(neq):
-            P[i,j] = simplify(P[i,j])
 
     # only run symbolic LU-decompostion if the system is not too large
     maxsize = args.maxsize
-    if(np.shape(P)[0] < maxsize):
-        print("#  Evaluating L and U matrices and check for sparsity structure..")
-        LU, Piv = P.LUdecomposition_Simple()
-#        print("#  Simplifying outgoing LU..")
-#        for i in range(neq):
-#            for j in range(neq):
-#                LU[i,j] = apart(LU[i,j])
+
+    print("#  Evaluating L and U matrices and check for sparsity structure..")
+    LU, Piv = P_order.LUdecomposition_Simple()
 
     # save information for sparsity structure
-    if(args.nnz!=0):
-        nnz = args.nnz
-    else:
-        nnz = P.nnz()
-
-    print("#  NNZs in Jacobian: " + str(P.nnz()) + " | Sparsity: " + str(float(nnz)/(neq*neq)))
-
-    if(np.shape(P)[0] < maxsize):
-        print("#  NNZs in LU-Matrix: " + str(LU.nnz()) + " | Sparsity: " + str(float(nnz)/(neq*neq)))
+    print("#  NNZs in Jacobian: " + str(P.nnz()) + " | Sparsity: " + str(float(P.nnz())/(neq*neq)))
+    print("#  NNZs in LU-Matrix: " + str(LU.nnz()) + " | Sparsity: " + str(float(LU.nnz())/(neq*neq)))
 
     # Choose packaging
     if(args.packaging=="CSC"):
         print("#  Packaging format: CSC (compressed sparse column)")
     elif(args.packaging=="COO"):
-        print("#  Packaging format: COO (coordinate list packaging)")
+        sys.exit("# Error: COO-format (coordinate list packaging) NOT SUPPORTED")
     elif(args.packaging=="CSR"):
-        print("#  Packaging format: CSR (compressed sparse row)")
+        sys.exit("# Error: CSR-format (compressed sparse row) NOT SUPPORTED")
+
+    row_index = zeros(LU.nnz(),1)
+    col_start = zeros(neq,1)
+    u_col_start = zeros(neq,1)
+    l_col_start = zeros(neq,1)
+    value = zeros(LU.nnz(),1)
+
+    # define the sparsity structure of LU-Matrix
+    for k in range(LU.nnz()):
+        j = LU.col_list()[k][1]              # column index
+        i = LU.col_list()[k][0]              # row index
+        u_col_start[j] = k
+        if(i==j):
+            l_col_start[j] = k
+        row_index[k] = i                     # row index
 
     # write changes to file
     fh_list = [open(args.solverfile), open(args.commonfile)]
