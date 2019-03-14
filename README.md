@@ -5,7 +5,7 @@ with relatively small Jacobians optimized on throughput. This is reached through
 a Python pre-processor that prepares the stiff and sparse equation system symbolically and writes
 down the outcome in Fortran syntax in source-file templates.
 
-    Version : 0.0
+    Version : 0.0.0
     Author  : Jannes Klee
     Contact : jklee@astrophysik.uni-kiel.de
 

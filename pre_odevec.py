@@ -10,7 +10,7 @@ Jacobian and preordering of the latter.
 
 from __future__ import print_function
 from sympy import symbols, Matrix, eye, zeros, fcode, SparseMatrix, \
-                  lambdify, simplify, factor, cancel, apart
+                  lambdify, simplify, factor, cancel, apart, sympify
 from scipy import sparse
 from shutil import copyfile
 from subprocess import check_output
@@ -277,34 +277,29 @@ def ReplacePragmas(fh_list, fout):
                 if (args.packaging=="DENSE"):
                     for i in range(jac.shape[0]):
                         for j in range(jac.shape[1]):
-#                            if (not P[i,j] == 0.0):
-                                fout[k].write("      jac(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                                              fcode(P[i, j], source_format='free', standard=95) + "\n")
-                elif (args.packaging=="COO"):
-                    for i in range(P.nnz()):
-                        fout[k].write("     jac%ind1(i,"+ str(i+1) + ") = " +
-                                          fcode(P.col_list()[i][0], source_format='free', standard=95) + "\n")
-                        fout[k].write("     jac%ind2(i,"+ str(i+1) + ") = " +
-                                          fcode(P.col_list()[i][1], source_format='free', standard=95) + "\n")
-                        fout[k].write("     jac%values(i,"+ str(i+1) + ") = " +
-                                          fcode(P.col_list()[i][2], source_format='free', standard=95) + "\n")
+                            fout[k].write("      jac(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                          fcode(P_order[i, j], source_format='free', standard=95) + "\n")
                 elif (args.packaging=="CSC"):
-                    for i in range(P.nnz()):
-                        fout[k].write("      jac(i," + str(P.col_list()[i][0]+1) + "," + str(P.col_list()[i][1] + 1) + ") = " +
-                                      fcode(P.col_list()[i][2], source_format='free', standard=95) + "\n")
+                    for i in range(P_order.nnz()):
+                        if (P_order.col_list()[i][2] == fills):
+                            fout[k].write("      jac%sdata(i," + str(i + 1) + ") = " +
+                                          fcode(0.0, source_format='free', standard=95) + "\n")
+                        else:
+                            fout[k].write("      jac%sdata(i," + str(i + 1) + ") = " +
+                                          fcode(P_order.col_list()[i][2], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_RHS"):
                 for i in range(rhs.shape[0]):
-#                    if (not rhs[i] == 0.0):
+                    if (not rhs[i] == 0.0):
                         fout[k].write("      rhs(i," + str(i + 1) + ") = " +
                                       fcode(rhs[i], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_LU_PRESENT"):
-                if(np.shape(P)[0] < args.maxsize):
-                    fout[k].write("    logical :: LU_PRESENT = .TRUE. \n")
-                else:
-                    fout[k].write("    logical :: LU_PRESENT = .FALSE. \n")
+#                if(np.shape(P)[0] < args.maxsize):
+#                    fout[k].write("    logical :: LU_PRESENT = .TRUE.\n")
+#                else:
+                    fout[k].write("    logical :: LU_PRESENT = .FALSE.\n")
             elif(srow == "#ODEVEC_ALLOCATE_LU"):
                 if (args.packaging=="DENSE"):
-                    fout[k].write( "    allocate(this%LU(this%nvector,this%neq,this%neq),STAT=err) \n" +
+                    fout[k].write( "    allocate(this%LU(this%nvector,this%neq,this%neq),STAT=err)\n" +
                                    "    this%LU(:,:,:) = 0.0")
                 if (args.packaging=="CSC"):
                     fout[k].write( "    allocate( & \n\
@@ -314,7 +309,6 @@ def ReplacePragmas(fh_list, fout):
               this%LU%row_index(this%nnz), & \n\
               STAT=err) \n")
                     fout[k].write( "    this%LU%sdata(:,:) = 0.0 \n")
-
             elif(srow == "#ODEVEC_DEALLOCATE_LU"):
                 if (args.packaging=="DENSE"):
                     fout[k].write( "    deallocate(this%LU) \n")
@@ -336,9 +330,9 @@ def ReplacePragmas(fh_list, fout):
             elif(srow == "#ODEVEC_LU_MATRIX"):
                 if (args.packaging=="DENSE"):
                     fout[k].write( "    double precision, pointer, " +
-                                   "dimension(:,:,:) :: LU       !> jacobian & LU Matrix \n")
+                                   "dimension(:,:,:) :: LU       !> jacobian & LU Matrix\n")
                 elif (args.packaging=="CSC"):
-                    fout[k].write( "    TYPE(CSC_Matrix) :: LU      !> jacobian & LU Matrix\n")
+                    fout[k].write( "    type(CSC_Matrix) :: LU      !> jacobian & LU Matrix\n")
             elif(srow == "#ODEVEC_COMMON_MODULE"):
                 fout[k].write("      use" + "\n")
             elif(srow == "#ODEVEC_EQUATIONS"):
@@ -349,9 +343,19 @@ def ReplacePragmas(fh_list, fout):
                 fout[k].write("    integer :: nnz=" + str(LU.nnz()) + "\n")
             elif(srow == "#ODEVEC_PACKAGING"):
                 if (args.packaging=="DENSE"):
-                    fout[k].write("    character(len=10) :: packaging=\"dense\" \n")
+                    fout[k].write("    character(len=10) :: packaging=\"dense\"\n")
                 elif (args.packaging=="CSC"):
-                    fout[k].write("    character(len=10) :: packaging=\"csc\" \n")
+                    fout[k].write("    character(len=10) :: packaging=\"csc\"\n")
+            elif(srow == "#ODEVEC_JAC_DEC"):
+                if (args.packaging=="DENSE"):
+                    fout[k].write("    double precision, dimension(this%nvector,this%neq,this%neq) :: jac\n")
+                if (args.packaging=="CSC"):
+                    fout[k].write("    type(csc_matrix) :: jac\n")
+            elif(srow == "#ODEVEC_LU_DEC"):
+                if (args.packaging=="DENSE"):
+                    fout[k].write("    double precision, dimension(this%nvector,this%neq,this%neq) :: LU\n")
+                if (args.packaging=="CSC"):
+                    fout[k].write("    type(csc_matrix) :: LU\n")
             elif(srow == "#ODEVEC_REACTIONS"):
                 fout[k].write("    integer :: nrea=" + str(nrea) + "\n")
             elif(srow == "#ODEVEC_DT_MIN"):
@@ -588,13 +592,26 @@ if __name__ == '__main__':
     elif(args.packaging=="CSR"):
         sys.exit("# Error: CSR-format (compressed sparse row) NOT SUPPORTED")
 
+
+    # pad fillins to P matrix in order to have the same structure as LU
+    P_order = Matrix(P_order)
+    LU = Matrix(LU)
+    fills = sympify("fills")                    # fill in placeholder
+    for j in range(neq):
+        for i in range(neq):
+            if (P_order[i,j] == 0 and LU[i,j] != 0):
+                P_order[i,j] = fills
+
+    P_order = SparseMatrix(P_order)
+    LU = SparseMatrix(LU)
+
+    # define the sparsity structure of LU-Matrix
     row_index = zeros(LU.nnz(),1)
     col_start = zeros(neq,1)
     u_col_start = zeros(neq,1)
     l_col_start = zeros(neq,1)
     value = zeros(LU.nnz(),1)
 
-    # define the sparsity structure of LU-Matrix
     for k in range(LU.nnz()):
         j = LU.col_list()[k][1]              # column index
         i = LU.col_list()[k][0]              # row index
