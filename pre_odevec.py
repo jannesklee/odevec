@@ -302,29 +302,30 @@ def ReplacePragmas(fh_list, fout):
                     fout[k].write( "    allocate(this%LU(this%nvector,this%neq,this%neq),STAT=err)\n" +
                                    "    this%LU(:,:,:) = 0.0")
                 if (args.packaging=="CSC"):
-                    fout[k].write( "    allocate( & \n\
-              this%LU%sdata(this%nvector,this%nnz), & \n\
-              this%LU%u_col_start(this%neq+1), & \n\
-              this%LU%l_col_start(this%neq+1), & \n\
-              this%LU%row_index(this%nnz), & \n\
-              STAT=err) \n")
-                    fout[k].write( "    this%LU%sdata(:,:) = 0.0 \n")
+                    fout[k].write( "    allocate( &\n\
+              this%LU%sdata(this%nvector,this%nnz), &\n\
+              this%LU%u_col_start(this%neq+1), &\n\
+              this%LU%l_col_start(this%neq+1), &\n\
+              this%LU%row_index(this%nnz), &\n\
+              STAT=err)\n")
+                    fout[k].write( "    this%LU%sdata(:,:) = 0.0\n")
             elif(srow == "#ODEVEC_DEALLOCATE_LU"):
                 if (args.packaging=="DENSE"):
                     fout[k].write( "    deallocate(this%LU) \n")
                 if (args.packaging=="CSC"):
                     fout[k].write( "    deallocate( & \n \
-                                    this%LU%sdata, & \n \
-                                    this%LU%u_col_start, & \n \
-                                    this%LU%l_col_start, & \n \
-                                    this%LU%row_index) \n")
+              this%LU%sdata, &\n \
+              this%LU%u_col_start, &\n \
+              this%LU%l_col_start, &\n \
+              this%LU%row_index)\n")
             elif(srow == "#ODEVEC_SET_LU_SPARSITY"):
-                fout[k].write( "    this%LU%row_index = " +
-                        fcode(np.array(row_index[:])+1, source_format='free', standard=95) + "\n")
-                fout[k].write( "    this%LU%u_col_start = " +
-                        fcode(np.array(u_col_start[:])+1, source_format='free', standard=95) + "\n")
-                fout[k].write( "    this%LU%l_col_start = " +
-                        fcode(np.array(l_col_start[:])+1, source_format='free', standard=95) + "\n")
+                if(args.packaging=="CSC"):
+                    fout[k].write( "    this%LU%row_index = " +
+                            fcode(np.array(row_index[:])+1, source_format='free', standard=95) + "\n")
+                    fout[k].write( "    this%LU%u_col_start = " +
+                            fcode(np.array(u_col_start[:])+1, source_format='free', standard=95) + "\n")
+                    fout[k].write( "    this%LU%l_col_start = " +
+                            fcode(np.array(l_col_start[:])+1, source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_VECTORLENGTH"):
                 fout[k].write( "    integer :: nvector=" + str(nvector) + "\n")
             elif(srow == "#ODEVEC_LU_MATRIX"):
@@ -332,7 +333,7 @@ def ReplacePragmas(fh_list, fout):
                     fout[k].write( "    double precision, pointer, " +
                                    "dimension(:,:,:) :: LU       !> jacobian & LU Matrix\n")
                 elif (args.packaging=="CSC"):
-                    fout[k].write( "    type(CSC_Matrix) :: LU      !> jacobian & LU Matrix\n")
+                    fout[k].write( "    type(csc_matrix) :: LU      !> jacobian & LU Matrix\n")
             elif(srow == "#ODEVEC_COMMON_MODULE"):
                 fout[k].write("      use" + "\n")
             elif(srow == "#ODEVEC_EQUATIONS"):
@@ -587,23 +588,21 @@ if __name__ == '__main__':
     # Choose packaging
     if(args.packaging=="CSC"):
         print("#  Packaging format: CSC (compressed sparse column)")
+        # pad fillins to P matrix in order to have the same structure as LU
+        P_order = Matrix(P_order)
+        LU = Matrix(LU)
+        fills = sympify("fills")                    # fill in placeholder
+        for j in range(neq):
+            for i in range(neq):
+                if (P_order[i,j] == 0 and LU[i,j] != 0):
+                    P_order[i,j] = fills
+        P_order = SparseMatrix(P_order)
+        LU = SparseMatrix(LU)
     elif(args.packaging=="COO"):
         sys.exit("# Error: COO-format (coordinate list packaging) NOT SUPPORTED")
     elif(args.packaging=="CSR"):
         sys.exit("# Error: CSR-format (compressed sparse row) NOT SUPPORTED")
 
-
-    # pad fillins to P matrix in order to have the same structure as LU
-    P_order = Matrix(P_order)
-    LU = Matrix(LU)
-    fills = sympify("fills")                    # fill in placeholder
-    for j in range(neq):
-        for i in range(neq):
-            if (P_order[i,j] == 0 and LU[i,j] != 0):
-                P_order[i,j] = fills
-
-    P_order = SparseMatrix(P_order)
-    LU = SparseMatrix(LU)
 
     # define the sparsity structure of LU-Matrix
     row_index = zeros(LU.nnz(),1)
@@ -612,13 +611,16 @@ if __name__ == '__main__':
     l_col_start = zeros(neq,1)
     value = zeros(LU.nnz(),1)
 
+    j_old = 0
     for k in range(LU.nnz()):
-        j = LU.col_list()[k][1]              # column index
         i = LU.col_list()[k][0]              # row index
-        u_col_start[j] = k
+        j = LU.col_list()[k][1]              # column index
+        if(j-1==j_old):
+            u_col_start[j] = k
         if(i==j):
             l_col_start[j] = k
         row_index[k] = i                     # row index
+        j_old = j
 
     # write changes to file
     fh_list = [open(args.solverfile), open(args.commonfile)]

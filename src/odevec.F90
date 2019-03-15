@@ -194,6 +194,7 @@ contains
         else
           call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
           call LUDecompose(this,this%LU,this%Piv)
+
         end if
         this%UpdateJac = .FALSE.
       end if
@@ -552,12 +553,40 @@ contains
   subroutine SolveLU_sparse(this,LU,Piv,res,den)
     implicit none
     type(odevec)   :: this
-    TYPE(CSC_Matrix) :: LU
-    double precision, dimension(this%nvector,this%neq)          :: res, den
-    integer         , dimension(this%neq)                       :: Piv
-    integer        :: i,j,k
+    type(csc_matrix) :: LU
+    double precision, dimension(this%nvector,this%neq) :: res, den
+    integer         , dimension(this%neq)              :: Piv
+    integer         , dimension(this%nvector)          :: mult
+    integer        :: i,j,k,kk
     intent(in)     :: LU,Piv,res
     intent(out)    :: den
+
+    do k = 1,this%neq
+!NEC$ ivdep
+      do i = 1,this%nvector
+        mult(i) = den(i,k)/LU%sdata(i,LU%l_col_start(k))
+        den(i,k) = mult(i)
+      end do
+      do kk = LU%l_col_start(k) + 1, LU%u_col_start(k+1) - 1
+!NEC$ ivdep
+        do i = 1, this%nvector
+          den(i,LU%row_index(kk)) = den(i,LU%row_index(kk)) - mult(i)*LU%sdata(i,kk)
+        end do
+      end do
+    end do
+
+    do k = 1,this%neq
+!NEC$ ivdep
+      do i = 1, this%nvector
+        mult(i) = den(i,k)
+      end do
+      do kk = LU%u_col_start(k), LU%l_col_start(k)-1
+!NEC$ ivdep
+        do i = 1, this%nvector
+          den(i,LU%row_index(kk)) = den(i,LU%row_index(kk)) - mult(i)*LU%sdata(i,kk)
+        end do
+      end do
+    end do
 
   end subroutine SolveLU_sparse
 
@@ -614,7 +643,7 @@ contains
     implicit none
     type(odevec) :: this
     integer        :: i, j, k, jj, kk
-    TYPE(CSC_Matrix) :: A
+    type(csc_matrix) :: A
     double precision, dimension(this%nvector,this%neq) :: w !< temporary column
     double precision, dimension(this%nvector) :: alpha
     integer,          dimension(this%neq) :: P
@@ -633,13 +662,13 @@ contains
         j = A%row_index(kk)
 !NEC$ ivdep
         do i = 1,this%nvector
-          alpha(i) = -w(i,j)/A%sdata(i,A%l_col_start(j))
+          alpha(i) = w(i,j)/A%sdata(i,A%l_col_start(j))
           w(i,j) = alpha(i)
         end do
         do jj = A%l_col_start(i)+1,A%u_col_start(i+1)-1
 !NEC$ ivdep
           do i = 1,this%nvector
-            w(i,A%row_index(jj)) = w(i,A%row_index(jj)) + alpha(i)*A%sdata(i,jj)
+            w(i,A%row_index(jj)) = w(i,A%row_index(jj)) - alpha(i)*A%sdata(i,jj)
           end do
         end do
       end do
