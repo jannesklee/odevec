@@ -483,9 +483,11 @@ if __name__ == '__main__':
     next step.
     """
     commit = check_output("git rev-parse --short HEAD", shell=True).rstrip()
+    dirty = check_output("git diff --quiet || echo 'dirty'", shell=True).rstrip()
     print("#------------------------------------------------------------------#")
     print("#        Running OdeVec Preprocessing                              #")
-    print("#        Commit Hash: " + str(commit) + "                                   #")
+    print("#        Commit Hash: " + commit.decode("utf-8") +" - "+ \
+            dirty.decode("utf-8") + "                              #")
     print("#------------------------------------------------------------------#")
 
     # ---------------- parsing -----------------------------------------------#
