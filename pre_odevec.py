@@ -373,9 +373,6 @@ def ReplacePragmas(fh_list, fout):
 
 def ReorderSystemCMK(P,y,rhs):
     """
-    BUG: Reordering is not working properly at the moment.
-    BUG: Nothing done with y_tmp, rhs_tmp.
-
     Reorders the Jacobian in order to have a better LU matrix
     with the CMK algorithm.
 
@@ -428,13 +425,11 @@ def ReorderSystemCMK(P,y,rhs):
 
 def ReorderSystemInvert(P,y,rhs):
     """
-    BUG: Reordering is not working properly at the moment.
-
     Reorders the Jacobian in order to have a better LU matrix by
     inverting the matrix (graphically).
     """
 
-    Perm = range(len(rhs))[::-1]
+    Perm = np.arange(len(rhs))[::-1]
 
     P_order = SparseMatrix.zeros(neq)
     rhs_order = rhs
@@ -444,13 +439,14 @@ def ReorderSystemInvert(P,y,rhs):
             P_order[i,j] = P[Perm[i],Perm[j]]
 
     print("#  Reordering: Inversed indices..")
-    print("#  Permutation list", Perm, "\n")
+    print("#  Permutation list", Perm)
     return P_order,y_order,rhs_order,Perm
 
 
 def ReorderSystemFewestFirst(P,y,rhs):
     """
-    BUG: Reordering is not working properly at the moment.
+    Reorders the Jacobian by ordering after the combined amount
+    of non-zeros along a column and rows.
     """
 
     Perm = np.arange(len(rhs))
@@ -569,7 +565,7 @@ if __name__ == '__main__':
         P_order, y_order, rhs_order, Perm = ReorderSystemCMK(P,y,rhs)
     elif(args.ordering=="INVERT"):
         P_order, y_order, rhs_order, Perm = ReorderSystemInvert(P,y,rhs)
-    elif(args.ordering=="FEWFIRST"):
+    elif(args.ordering=="FF"):
         P_order, y_order, rhs_order, Perm = ReorderSystemFewestFirst(P,y,rhs)
     else:
         P_order = P
