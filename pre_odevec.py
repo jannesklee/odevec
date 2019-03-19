@@ -265,14 +265,16 @@ def ReplacePragmas(fh_list, fout):
             srow = row.strip()
             if(srow == "#ODEVEC_LU"):
                 if(np.shape(P)[0] < args.maxsize):
-                    for i in range(LU.shape[0]):
-                        for j in range(LU.shape[1]):
-                            if (not LU[i,j] == 0.0):
-                                fout[k].write("      LU(i," + str(i + 1) + "," + str(j + 1) + ") = " +
-                                              fcode(LU[i, j], source_format='free', standard=95) + "\n")
-            elif(srow == "#ODEVEC_PERMUTATIONS"):
-                fout[k].write( "    this%Perm = " +
-                              fcode(perm+1, source_format='free', standard=95) + "\n")
+                    if (args.packaging=="DENSE"):
+                        for i in range(LU.shape[0]):
+                            for j in range(LU.shape[1]):
+                                if (not LU[i,j] == 0.0):
+                                    fout[k].write("      LU(i," + str(i + 1) + "," + str(j + 1) + ") = " +
+                                                  fcode(LU[i, j], source_format='free', standard=95) + "\n")
+                    elif (args.packaging=="CSC"):
+                        for i in range(LU.nnz()):
+                            fout[k].write("      LU%sdata(i," + str(i + 1) + ") = " +
+                                          fcode(LU.col_list()[i][2], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_JAC"):
                 if (args.packaging=="DENSE"):
                     for i in range(jac.shape[0]):
@@ -292,6 +294,9 @@ def ReplacePragmas(fh_list, fout):
                     if (not rhs[i] == 0.0):
                         fout[k].write("      rhs(i," + str(i + 1) + ") = " +
                                       fcode(rhs[i], source_format='free', standard=95) + "\n")
+            elif(srow == "#ODEVEC_PERMUTATIONS"):
+                fout[k].write( "    this%Perm = " +
+                              fcode(perm+1, source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_LU_PRESENT"):
 #                if(np.shape(P)[0] < args.maxsize):
 #                    fout[k].write("    logical :: LU_PRESENT = .TRUE.\n")
@@ -609,7 +614,7 @@ if __name__ == '__main__':
     # define the sparsity structure of LU-Matrix
     row_index = zeros(LU.nnz(),1)
     col_start = zeros(neq,1)
-    u_col_start = zeros(neq,1)
+    u_col_start = zeros(neq+1,1)
     l_col_start = zeros(neq,1)
     value = zeros(LU.nnz(),1)
 
@@ -623,6 +628,7 @@ if __name__ == '__main__':
             l_col_start[j] = k
         row_index[k] = i                     # row index
         j_old = j
+    u_col_start[j+1] = LU.nnz()
 
     # write changes to file
     fh_list = [open(args.solverfile), open(args.commonfile)]

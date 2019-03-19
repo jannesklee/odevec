@@ -207,8 +207,6 @@ contains
         ! calculates residuum
         call CalcResiduum(this,GetRHS,y,dt,this%res)
 
-
-
         ! calculates the solution for dy with given residuum
         call SolveLU(this,this%LU,this%Piv,this%res,this%den)
 
@@ -558,21 +556,23 @@ contains
     type(csc_matrix) :: LU
     double precision, dimension(this%nvector,this%neq) :: res, den
     integer, dimension(this%neq) :: Piv
-    integer, dimension(this%nvector) :: mult
+    double precision, dimension(this%nvector) :: mult
     integer :: i,j,k,kk
     intent(in) :: LU,Piv
     intent(inout) :: res
     intent(out) :: den
 
+    den = res
     do k = 1,this%neq
 !NEC$ ivdep
       do i = 1,this%nvector
-        mult(i) = res(i,k)/LU%sdata(i,LU%l_col_start(k))
+        mult(i) = den(i,k)/LU%sdata(i,LU%l_col_start(k))
+        den(i,k) = mult(i)
       end do
       do kk = LU%l_col_start(k) + 1, LU%u_col_start(k+1) - 1
 !NEC$ ivdep
         do i = 1,this%nvector
-          res(i,LU%row_index(kk)) = res(i,LU%row_index(kk)) - mult(i)*LU%sdata(i,kk)
+          den(i,LU%row_index(kk)) = den(i,LU%row_index(kk)) - mult(i)*LU%sdata(i,kk)
         end do
       end do
     end do
@@ -580,17 +580,15 @@ contains
     do k = this%neq,1,-1
 !NEC$ ivdep
       do i = 1,this%nvector
-        mult(i) = res(i,k)
+        mult(i) = den(i,k)
       end do
-      do kk = LU%l_col_start(k)-1,LU%u_col_start(k),-1
+      do kk = LU%u_col_start(k), LU%l_col_start(k) - 1
 !NEC$ ivdep
         do i = 1, this%nvector
-          res(i,LU%row_index(kk)) = res(i,LU%row_index(kk)) - mult(i)*LU%sdata(i,kk)
+          den(i,LU%row_index(kk)) = den(i,LU%row_index(kk)) - mult(i)*LU%sdata(i,kk)
         end do
       end do
     end do
-
-    den = res
 
   end subroutine SolveLU_sparse
 
