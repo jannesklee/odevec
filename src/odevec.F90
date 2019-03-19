@@ -207,8 +207,19 @@ contains
         ! calculates residuum
         call CalcResiduum(this,GetRHS,y,dt,this%res)
 
+
         ! calculates the solution for dy with given residuum
+        do i=1,this%neq
+          this%den(:,i) = this%res(:,this%Perm(i))
+        end do
+        this%res(:,:) = this%den(:,:)
+
         call SolveLU(this,this%LU,this%Piv,this%res,this%den)
+
+        do i=1,this%neq
+          this%res(:,this%Perm(i)) = this%den(:,i)
+        end do
+        this%den(:,:) = this%res(:,:)
 
         ! add correction to solution vector
         this%en(:,:) = this%en(:,:) + this%den(:,:)
@@ -558,8 +569,7 @@ contains
     integer, dimension(this%neq) :: Piv
     double precision, dimension(this%nvector) :: mult
     integer :: i,j,k,kk
-    intent(in) :: LU,Piv
-    intent(inout) :: res
+    intent(in) :: LU,Piv,res
     intent(out) :: den
 
     den = res

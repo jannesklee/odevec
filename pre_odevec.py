@@ -296,7 +296,7 @@ def ReplacePragmas(fh_list, fout):
                                       fcode(rhs[i], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_PERMUTATIONS"):
                 fout[k].write( "    this%Perm = " +
-                              fcode(perm+1, source_format='free', standard=95) + "\n")
+                              fcode(Perm+1, source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_LU_PRESENT"):
 #                if(np.shape(P)[0] < args.maxsize):
 #                    fout[k].write("    logical :: LU_PRESENT = .TRUE.\n")
@@ -396,8 +396,8 @@ def ReorderSystemCMK(P,y,rhs):
         Reordered sympy matrix of ingoing matrix y.
     rhs_tmp : sympy matrix
         Reorodered sympy matrix of ingoin matrix rhs.
-    perm : scipy matrix
-        Permuttation matrix.
+    Perm : scipy matrix
+        Permutation matrix.
     """
 
     # replace non-zero entries with ones for ordering algorithms in scipy
@@ -411,19 +411,19 @@ def ReorderSystemCMK(P,y,rhs):
     Psci = sparse.csc_matrix((data.astype(int), (i, j)))
 
     # apply Cuthill-McKee-Algorithm
-    perm = sparse.csgraph.reverse_cuthill_mckee(Psci, symmetric_mode=False)
+    Perm = sparse.csgraph.reverse_cuthill_mckee(Psci, symmetric_mode=False)
 
-    P_order = zeros(Psci.shape[0],Psci.shape[1])
-    y_tmp = y
-    rhs_tmp = rhs
+    P_order = SparseMatrix.zeros(neq)
+    rhs_order = rhs
+    y_order = y
     for i in range(Psci.shape[0]):
         for j in range(Psci.shape[1]):
-            P_order[i,j] = P[perm[i],perm[j]]
+            P_order[i,j] = P[Perm[i],Perm[j]]
 
     print("#  Reordering with CMK-Algorithm..")
-    print("#  Permutation list", perm, "\n")
+    print("#  Permutation list", Perm)
 
-    return P_order,y_tmp,rhs_tmp,perm
+    return P_order,y_order,rhs_order,Perm
 
 
 def ReorderSystemInvert(P,y,rhs):
@@ -434,18 +434,18 @@ def ReorderSystemInvert(P,y,rhs):
     inverting the matrix (graphically).
     """
 
-    perm = range(len(rhs))[::-1]
+    Perm = range(len(rhs))[::-1]
 
     P_order = SparseMatrix.zeros(neq)
     rhs_order = rhs
     y_order = y
     for i in range(neq):
         for j in range(neq):
-            P_order[i,j] = P[perm[i],perm[j]]
+            P_order[i,j] = P[Perm[i],Perm[j]]
 
     print("#  Reordering: Inversed indices..")
-    print("#  Permutation list", perm, "\n")
-    return P_order,y_order,rhs_order,perm
+    print("#  Permutation list", Perm, "\n")
+    return P_order,y_order,rhs_order,Perm
 
 
 def ReorderSystemFewestFirst(P,y,rhs):
@@ -453,30 +453,25 @@ def ReorderSystemFewestFirst(P,y,rhs):
     BUG: Reordering is not working properly at the moment.
     """
 
-    perm = np.arange(len(rhs))
+    Perm = np.arange(len(rhs))
 
     sorter = np.zeros(neq)
     for i in range(neq):
         sorter[i] = P[:,i].nnz() + P[i,:].nnz() - 1
 
     sort_indices = sorter.argsort()
-    perm = perm[sort_indices]
+    Perm = Perm[sort_indices]
 
-    P_order = P
-    y_order = y
-    rhs_order = rhs
     P_order = SparseMatrix.zeros(neq)
     rhs_order = rhs
     y_order = y
     for i in range(neq):
-        rhs_order[i] = rhs[perm[i]]
-        y_order[i] = y[perm[i]]
         for j in range(neq):
-            P_order[i,j] = P[perm[i],perm[j]]
+            P_order[i,j] = P[Perm[i],Perm[j]]
 
     print("#  Reordering: putting fewest reactions first..")
 
-    return P_order, y_order, rhs_order, perm
+    return P_order, y_order, rhs_order, Perm
 
 # command line execution
 if __name__ == '__main__':
@@ -499,59 +494,59 @@ if __name__ == '__main__':
     # Please note: ordering alphabatically with parsing argument
     # ------------------------------------------------------------------------#
     parser = argparse.ArgumentParser(
-        description='Preprocessor for OdeVec. A vectorized ODE-solver built for high throughput.')
+            description='Preprocessor for OdeVec. A vectorized ODE-solver built for high throughput.')
     parser.add_argument(
-        '--commonfile',
-        default='src/odevec_commons.F90',
-        help='path to the not preprocessed common file')
+            '--commonfile',
+            default='src/odevec_commons.F90',
+            help='path to the not preprocessed common file')
     parser.add_argument(
-        '--commonout',
-        default='build/odevec_commons.f90',
-        help='path to the output common file')
+            '--commonout',
+            default='build/odevec_commons.f90',
+            help='path to the output common file')
     parser.add_argument(
-        '--example',
-        default="PRIMORDIAL",
-        help='pre-defined networks to solve')
+            '--example',
+            default="PRIMORDIAL",
+            help='pre-defined networks to solve')
     parser.add_argument(
-        '--krome_setupfile',
-        default=None,
-        help='path to an extra file from krome providing the ode')
+            '--krome_setupfile',
+            default=None,
+            help='path to an extra file from krome providing the ode')
     parser.add_argument(
-        '--maxsize',
-        type=int,
-        default=5,
-        help='maximum size of the Jacobian, which should still be symbolically LU-decomposed')
+            '--maxsize',
+            type=int,
+            default=5,
+            help='maximum size of the Jacobian, which should still be symbolically LU-decomposed')
     parser.add_argument(
-        '--dt_min',
-        default=1e-10,
-        required=False,
-        help='change minimal timestep')
+            '--dt_min',
+            default=1e-10,
+            required=False,
+            help='change minimal timestep')
     parser.add_argument(
-        '--nvector',
-        default=1,
-        type=int,
-        required=True,
-        help='set vector length for the solver')
+            '--nvector',
+            default=1,
+            type=int,
+            required=True,
+            help='set vector length for the solver')
     parser.add_argument(
-        '--ordering',
-        default=None,
-        help='preorder algorithm with a common algorithm')
+            '--ordering',
+            default=None,
+            help='preorder algorithm with a common algorithm')
     parser.add_argument(
-        '--packaging',
-        default="DENSE",
-        help='Adds a sparse packaging format like CSC/CSR to the solver.')
+            '--packaging',
+            default="DENSE",
+            help='Adds a sparse packaging format like CSC/CSR to the solver.')
     parser.add_argument(
-        '--solverfile',
-        default='src/odevec.F90',
-        help='path to the not preprocessed solver file')
+            '--solverfile',
+            default='src/odevec.F90',
+            help='path to the not preprocessed solver file')
     parser.add_argument(
-        '--solverout',
-        default='build/odevec.f90',
-        help='path to the solver output file')
+            '--solverout',
+            default='build/odevec.f90',
+            help='path to the solver output file')
     parser.add_argument(
-        '--sparsity_structure',
-        default=False,
-        help='Print sparsity structure of the matrices to stdout.')
+            '--sparsity_structure',
+            default=False,
+            help='Print sparsity structure of the matrices to stdout.')
 
     args = parser.parse_args()
 
@@ -571,16 +566,16 @@ if __name__ == '__main__':
 
     # Reorder the system if chosen so
     if(args.ordering=="CMK"):
-        P_order, y_order, rhs_order, perm = ReorderSystemCMK(P,y,rhs)
+        P_order, y_order, rhs_order, Perm = ReorderSystemCMK(P,y,rhs)
     elif(args.ordering=="INVERT"):
-        P_order, y_order, rhs_order, perm = ReorderSystemInvert(P,y,rhs)
+        P_order, y_order, rhs_order, Perm = ReorderSystemInvert(P,y,rhs)
     elif(args.ordering=="FEWFIRST"):
-        P_order, y_order, rhs_order, perm = ReorderSystemFewestFirst(P,y,rhs)
+        P_order, y_order, rhs_order, Perm = ReorderSystemFewestFirst(P,y,rhs)
     else:
         P_order = P
         y_order = y
         rhs_order = rhs
-        perm = np.arange(len(rhs))
+        Perm = np.arange(len(rhs))
 
     # only run symbolic LU-decompostion if the system is not too large
     maxsize = args.maxsize
