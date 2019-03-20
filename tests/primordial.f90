@@ -5,13 +5,15 @@ Program primordial
   type(odevec) :: ode
   integer, parameter :: nmols=12,nspec=16
   double precision :: t0, time, dt, t_step, t_stop
-  double precision :: start,finish,rho_c(100),x(100,nmols)
-  double precision, dimension(100,nspec) :: rhs_tmp
+  double precision :: start,finish
+  double precision, pointer :: rho_c(:),x(:,:)
   integer :: i, j
 
   call cpu_time(start)
 
   call InitOdevec(ode)
+
+  allocate(rho_c(ode%nvector), x(ode%nvector,nmols))
 
   ode%rtol = 1d-4
   ode%atol = 1d-20
@@ -73,6 +75,9 @@ Program primordial
   print *, "used tolerances (rel.,abs.):", ode%rtol, ode%atol
   print *, "#-------------------------------------------------------#"
   print *, ""
+
+
+  deallocate(rho_c, x)
 
 
   call CloseOdevec(ode)
