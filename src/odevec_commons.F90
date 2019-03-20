@@ -18,7 +18,6 @@ module odevec_commons
 
     ! \todo remove again
 #ifdef HAVE_COEFFICIENTS
-    k = 0.0d0
     k = coe(this)
 #endif
 
@@ -44,7 +43,6 @@ module odevec_commons
     integer          :: i
 
 #ifdef HAVE_COEFFICIENTS
-    k = 0.0d0
     k = coe(this)
 #endif
 
@@ -71,7 +69,6 @@ module odevec_commons
     intent (out)    :: rhs
 
 #ifdef HAVE_COEFFICIENTS
-    k = 0.0d0
     k = coe(this)
 #endif
 
