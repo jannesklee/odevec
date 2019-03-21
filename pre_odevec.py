@@ -596,10 +596,14 @@ if __name__ == '__main__':
                     P_order[i,j] = fills
         P_order = SparseMatrix(P_order)
         LU = SparseMatrix(LU)
+    elif(args.packaging=="DENSE"):
+        print("#  Packaging format: dense (no compression)")
     elif(args.packaging=="COO"):
         sys.exit("# Error: COO-format (coordinate list packaging) NOT SUPPORTED")
     elif(args.packaging=="CSR"):
         sys.exit("# Error: CSR-format (compressed sparse row) NOT SUPPORTED")
+    else:
+        sys.exit("# Error: This format is not known.")
 
 
     # define the sparsity structure of LU-Matrix

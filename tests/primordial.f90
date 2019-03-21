@@ -4,6 +4,7 @@ Program primordial
   implicit none
   type(odevec) :: ode
   integer, parameter :: nmols=12,nspec=16
+  integer, parameter :: nvector=8192
   double precision :: t0, time, dt, t_step, t_stop
   double precision :: start,finish
   double precision, pointer :: rho_c(:),x(:,:)
