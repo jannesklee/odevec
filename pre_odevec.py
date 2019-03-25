@@ -291,9 +291,8 @@ def ReplacePragmas(fh_list, fout):
                                           fcode(P_order.col_list()[i][2], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_RHS"):
                 for i in range(rhs.shape[0]):
-                    if (not rhs[i] == 0.0):
-                        fout[k].write("      rhs(i," + str(i + 1) + ") = " +
-                                      fcode(rhs[i], source_format='free', standard=95) + "\n")
+                    fout[k].write("      rhs(i," + str(i + 1) + ") = " +
+                                  fcode(rhs[i], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_PERMUTATIONS"):
                 fout[k].write( "    this%Perm = " +
                               fcode(Perm+1, source_format='free', standard=95) + "\n")
