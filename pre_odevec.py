@@ -309,7 +309,7 @@ def ReplacePragmas(fh_list, fout):
                     fout[k].write( "    allocate( &\n\
               this%LU%sdata(this%nvector,this%nnz), &\n\
               this%LU%u_col_start(this%neq+1), &\n\
-              this%LU%l_col_start(this%neq+1), &\n\
+              this%LU%l_col_start(this%neq), &\n\
               this%LU%row_index(this%nnz), &\n\
               STAT=err)\n")
                     fout[k].write( "    this%LU%sdata(:,:) = 0.0\n")
