@@ -15,7 +15,7 @@ module odevec_main
 #ODEVEC_NNZ
     integer :: iterator                                     !> iterator
     integer :: order                                        !> current order
-!    integer :: successes, necessary_successes
+    integer :: dtorder_index                                !> last step-size/order change
     logical :: UpdateJac
 
     double precision :: rtol                                !> relative tolerance
@@ -133,6 +133,7 @@ contains
     this%order       = 1
     this%y_NS(:,:,0) = y(:,:)
     this%iterator    = 0
+!    this%dtorder_index = 0
 
     ! main solve - solve the linear system
     do while (time < t_stop)
@@ -172,8 +173,6 @@ contains
     conv_iterator = 0
     conv_failed   = 0
     this%UpdateJac = .TRUE.
-!    this%successes     = 0
-!    this%necessary_successes = this%order + 1
 
     ! needed in order to calculate the weighted norm
     call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
@@ -191,11 +190,13 @@ contains
         if (this%LU_PRESENT) then
           call GetLU(this,this%coeff(this%order,0),y,dt,this%LU,this%Piv)
           this%Piv = [(i, i=1, this%neq)]
+          conv_rate     = 0.7d0
         else
           call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
           call LUDecompose(this,this%LU,this%Piv)
+          conv_rate     = 0.7d0
         end if
-        this%UpdateJac = .FALSE.
+        this%UpdateJac = .TRUE.
       end if
 
       conv_iterator = 0
@@ -259,13 +260,12 @@ contains
       if (error > 1d0) then
         dt_scale = 0.2
         call ResetSystem(this,dt_scale,dt,this%y_NS)
-        !if (dt .lt. this%dt_min) stop
         lte_iterator = lte_iterator + 1
         this%UpdateJac = .TRUE.
+!        this%dtorder_index = 0
         cycle predictor
       else
         success = .TRUE.
-!        this%successes = this%successes + 1
       end if
     end do predictor
 
@@ -275,17 +275,16 @@ contains
     ! advance in time
     t = t + dt
 
-!    if (this%successes .ge. this%necessary_successes) then
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for order+(0,-1,+1) -> use largest for next step
-    call CalcStepSizeOrder(this,dt_scale,this%order)
+!    this%dtorder_index = this%dtorder_index - 1
+!    if (this%dtorder_index.EQ.0) then
+     call CalcStepSizeOrder(this,dt_scale,this%order)
 
-    ! Adjust the Nordsieck history array with new step size & new order
-    call SetStepSize(this,dt_scale,this%y_NS,dt)
-
-!    this%necessary_successes = this%order + 1
-!    this%successes = 0
+     ! Adjust the Nordsieck history array with new step size & new order
+     call SetStepSize(this,dt_scale,this%y_NS,dt)
 !    end if
+
     this%en_old = this%en
   end subroutine SolveLinearSystem
 
@@ -325,11 +324,11 @@ contains
 
     ! calculate all estimated step sizes
     ! todo err_weight_2 = err_weight*err_weight
-    dt_scale_down = 1.d0/(1.3*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order)/ &
+    dt_scale_down = 1.d0/(5.0*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order)/ &
                           this%tautable(order,order-1))**(1d0/order) + 1d-6)
-    dt_scale      = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
+    dt_scale      = 1.d0/(1.1*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
                           this%tautable(order,order))**(1d0/(order+1d0)) + 1d-6)
-    dt_scale_up   = 1.d0/(1.4*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2)/ &
+    dt_scale_up   = 1.0d0/(4.0*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2)/ &
                           this%tautable(order,order+1))**(1d0/(order+2d0)) + 1d-6)
 
     ! choose largest and search for location of largest
@@ -357,6 +356,7 @@ contains
         ! do nothing
       end if
     end if
+    this%dtorder_index = order + 1
   end subroutine
 
 
@@ -397,8 +397,8 @@ contains
     double precision, dimension(this%nvector,this%neq) :: en, inv_weight_2
     intent(in)       :: en,inv_weight_2,this
 
-    WeightedNorm1 = sqrt(sum(en(:,:)*en(:,:)*inv_weight_2(:,:))/ &
-                         (this%neq*this%nvector))
+    WeightedNorm1 = maxval(sqrt(sum(en(:,:)*en(:,:)*inv_weight_2(:,:),DIM=2))/ &
+                         (this%neq))
   end function WeightedNorm1
   pure function WeightedNorm2(this,en,inv_weight_2,column)
     implicit none
@@ -409,8 +409,8 @@ contains
     double precision, dimension(this%nvector,this%neq) :: inv_weight_2
     intent(in)       :: en,inv_weight_2,column,this
 
-    WeightedNorm2 = sqrt(sum(en(:,:,column)*en(:,:,column)*inv_weight_2(:,:))/ &
-                         (this%neq*this%nvector))
+    WeightedNorm2 = maxval(sqrt(sum(en(:,:,column)*en(:,:,column)*inv_weight_2(:,:),DIM=2))/ &
+                         (this%neq))
   end function WeightedNorm2
 
 
