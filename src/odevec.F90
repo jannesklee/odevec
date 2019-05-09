@@ -20,8 +20,6 @@ module odevec_main
 
     double precision :: rtol                                !> relative tolerance
     double precision :: atol                                !> absolute tolerance
-    double precision :: t                                   !> current time
-    double precision :: dt                                  !> current timestep
     double precision :: dt_min                              !> minimal timestep
     double precision, pointer, dimension(:,:) :: y          !> current solution
                                                             !> array | often y_NS(:,:,0)
@@ -100,13 +98,6 @@ contains
     60d0/137d0,1d0, 225d0/274d0,85d0/274d0,15d0/274d0 ,1d0/274d0,0d0         , &
     20d0/49d0 ,1d0, 58d0/63d0  ,5d0/12d0  ,25d0/252d0 ,1d0/84d0 ,1d0/1764d0 /),&
     (/7, 6/)))
-
-    ! precompute all tau and save them in a table (better performance)
-    do i=1,this%maxorder+1
-      do j=0,this%maxorder+1
-        this%tautable(i,j) = tau(i,j,this%coeff)
-      end do
-    end do
 
 #ODEVEC_DT_MIN
 
@@ -201,13 +192,12 @@ contains
 
       conv_iterator = 0
       ! 3. corrector ----------------------------------------------------------!
-      corrector: do while ((conv_error > this%tautable(this%order,this%order)/ &
+      corrector: do while ((conv_error > tau(this%order,this%order,this%coeff)/ &
                                         (2d0*(this%order+2d0))) .or. &
                            (conv_iterator .eq. 0))
 
         ! calculates residuum
         call CalcResiduum(this,GetRHS,y,dt,this%res)
-
 
         ! calculates the solution for dy with given residuum
         do i=1,this%neq
@@ -256,7 +246,7 @@ contains
       ! checks if solution is good enough and, similar to the convergence
       ! test, rerun from predictor with adjusted step size
       error = WeightedNorm(this,this%en,this%inv_weight_2)/ &
-              this%tautable(this%order,this%order)
+              tau(this%order,this%order,this%coeff)
       if (error > 1d0) then
         dt_scale = 0.2
         call ResetSystem(this,dt_scale,dt,this%y_NS)
@@ -323,13 +313,12 @@ contains
     intent(inout)    :: order,this
 
     ! calculate all estimated step sizes
-    ! todo err_weight_2 = err_weight*err_weight
-    dt_scale_down = 1.d0/(5.0*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order)/ &
-                          this%tautable(order,order-1))**(1d0/order) + 1d-6)
-    dt_scale      = 1.d0/(1.1*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
-                          this%tautable(order,order))**(1d0/(order+1d0)) + 1d-6)
-    dt_scale_up   = 1.0d0/(4.0*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2)/ &
-                          this%tautable(order,order+1))**(1d0/(order+2d0)) + 1d-6)
+    dt_scale_down = 1.d0/(1.3*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order)/ &
+                          tau(order,order-1,this%coeff))**(1d0/order) + 1d-6)
+    dt_scale      = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
+                          tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
+    dt_scale_up   = 1.0d0/(1.4*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2)/ &
+                          tau(order,order+1,this%coeff))**(1d0/(order+2d0)) + 1d-6)
 
     ! choose largest and search for location of largest
     dt_maxloc = maxloc((/ dt_scale_down, dt_scale, dt_scale_up /),DIM=1)
@@ -379,7 +368,7 @@ contains
     if (iterator == 2 .and. conv_rate2 > 2d0) then
       reset = .TRUE.
     else if (iterator > 2 .and.  &
-            conv_error > this%tautable(this%order,this%order)/(2d0*(this%order + 2d0))) then
+            conv_error > tau(this%order,this%order,this%coeff)/(2d0*(this%order + 2d0))) then
       reset = .TRUE.
     else if (iterator > 3) then
       reset = .TRUE.
@@ -390,15 +379,15 @@ contains
 
 
   !> Calculates the weighted norm (two different interfaces for performance)
-  pure function WeightedNorm1(this,en,inv_weight_2)
+  function WeightedNorm1(this,en,inv_weight_2)
     implicit none
     type(odevec)     :: this
     double precision :: WeightedNorm1
     double precision, dimension(this%nvector,this%neq) :: en, inv_weight_2
     intent(in)       :: en,inv_weight_2,this
 
-    WeightedNorm1 = maxval(sqrt(sum(en(:,:)*en(:,:)*inv_weight_2(:,:),DIM=2))/ &
-                         (this%neq))
+    WeightedNorm1 = maxval(sqrt(sum(en(:,:)*en(:,:)*inv_weight_2(:,:),DIM=2)/ &
+                         (this%neq)))
   end function WeightedNorm1
   pure function WeightedNorm2(this,en,inv_weight_2,column)
     implicit none
@@ -409,8 +398,8 @@ contains
     double precision, dimension(this%nvector,this%neq) :: inv_weight_2
     intent(in)       :: en,inv_weight_2,column,this
 
-    WeightedNorm2 = maxval(sqrt(sum(en(:,:,column)*en(:,:,column)*inv_weight_2(:,:),DIM=2))/ &
-                         (this%neq))
+    WeightedNorm2 = maxval(sqrt(sum(en(:,:,column)*en(:,:,column)*inv_weight_2(:,:),DIM=2)/ &
+                         (this%neq)))
   end function WeightedNorm2
 
 
@@ -750,7 +739,7 @@ contains
     implicit none
     integer :: i, order, order2
     double precision :: tau, faculty
-    double precision, dimension(0:6,6) :: coeff
+    double precision, dimension(1:6,0:6) :: coeff
     intent(in) :: coeff, order
 
     faculty=1d0
@@ -759,7 +748,11 @@ contains
       faculty = faculty*i
     end do
 
-    tau = (order2+1d0)/(faculty*coeff(order,order))
+    if (order-1.eq.order2) then
+      tau = (order2+1d0)/(faculty)
+    else
+      tau = (order2+1d0)/(faculty*coeff(order,order))
+    end if
 
     return
   end function tau
