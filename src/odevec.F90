@@ -109,7 +109,13 @@ contains
     ! sparsity patterns
 #ODEVEC_SET_LU_SPARSITY
 
+    ! some initializations
     this%FirstStep   = .true.
+    this%order       = 1
+    this%iterator    = 0
+    this%dtorder_count = 0
+    this%update_dtorder = .true.
+
 
   end subroutine
 
@@ -124,12 +130,7 @@ contains
     intent(in)        :: t_stop
     intent(inout)     :: y, time, dt
 
-    ! some initializations
-    this%order       = 1
     this%y_NS(:,:,0) = y(:,:)
-    this%iterator    = 0
-    this%dtorder_count = 0
-    this%update_dtorder = .true.
 
     ! main solve - solve the linear system
     do while (time < t_stop)
