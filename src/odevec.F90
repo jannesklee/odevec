@@ -15,8 +15,10 @@ module odevec_main
 #ODEVEC_NNZ
     integer :: iterator                                     !> iterator
     integer :: order                                        !> current order
-    integer :: dtorder_index                                !> last step-size/order change
+    integer :: dtorder_count                                !> last step-size/order change
     logical :: UpdateJac
+    logical :: FirstStep
+    logical :: update_dtorder
 
     double precision :: rtol                                !> relative tolerance
     double precision :: atol                                !> absolute tolerance
@@ -107,6 +109,8 @@ contains
     ! sparsity patterns
 #ODEVEC_SET_LU_SPARSITY
 
+    this%FirstStep   = .true.
+
   end subroutine
 
 
@@ -124,7 +128,8 @@ contains
     this%order       = 1
     this%y_NS(:,:,0) = y(:,:)
     this%iterator    = 0
-!    this%dtorder_index = 0
+    this%dtorder_count = 0
+    this%update_dtorder = .true.
 
     ! main solve - solve the linear system
     do while (time < t_stop)
@@ -144,7 +149,7 @@ contains
     double precision, dimension(this%nvector,this%neq) :: y
     double precision :: dt, t, dt_scale
     integer          :: i,j,k
-    double precision :: conv_error, conv_rate, error
+    double precision :: conv_error, conv_rate, conv_crit, error
     integer          :: conv_iterator, conv_failed, lte_iterator
     logical          :: success, reset
     intent(inout)    :: y, dt, t
@@ -159,19 +164,20 @@ contains
     ! some initializations
     this%den      = 0.0d0
     conv_rate     = 0.7d0
-    conv_error    = HUGE(1d0)
     lte_iterator  = 0
     conv_iterator = 0
     conv_failed   = 0
-    this%UpdateJac = .TRUE.
+    this%UpdateJac = .true.
 
     ! needed in order to calculate the weighted norm
     call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
 
     ! 2. predictor ------------------------------------------------------------!
-    success = .FALSE.
+    success = .false.
     predictor: do while(.not. success)
-      reset = .FALSE.
+      reset = .false.
+      conv_rate     = 0.7d0
+      conv_iterator = 0
 
       ! predictor step - set predicted y_NS, en=0.0
       call PredictSolution(this,this%y_NS,this%en)
@@ -181,36 +187,20 @@ contains
         if (this%LU_PRESENT) then
           call GetLU(this,this%coeff(this%order,0),y,dt,this%LU,this%Piv)
           this%Piv = [(i, i=1, this%neq)]
-          conv_rate     = 0.7d0
         else
           call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
           call LUDecompose(this,this%LU,this%Piv)
-          conv_rate     = 0.7d0
         end if
-        this%UpdateJac = .TRUE.
+        this%UpdateJac = .false.
       end if
 
-      conv_iterator = 0
       ! 3. corrector ----------------------------------------------------------!
-      corrector: do while ((conv_error > tau(this%order,this%order,this%coeff)/ &
-                                        (2d0*(this%order+2d0))) .or. &
-                           (conv_iterator .eq. 0))
-
+      corrector: do while (conv_crit.gt.1.0 .or. conv_iterator.eq.0)
         ! calculates residuum
         call CalcResiduum(this,GetRHS,y,dt,this%res)
 
         ! calculates the solution for dy with given residuum
-        do i=1,this%neq
-          this%den(:,i) = this%res(:,this%Perm(i))
-        end do
-        this%res(:,:) = this%den(:,:)
-
         call SolveLU(this,this%LU,this%Piv,this%res,this%den)
-
-        do i=1,this%neq
-          this%res(:,this%Perm(i)) = this%den(:,i)
-        end do
-        this%den(:,:) = this%res(:,:)
 
         ! add correction to solution vector
         this%en(:,:) = this%en(:,:) + this%den(:,:)
@@ -220,9 +210,8 @@ contains
         ! if fail reset and run again starting at predictor step with 0.25
         ! times the step-size
         call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
-                              conv_error,this%inv_weight_2,reset)
+                              conv_error,this%inv_weight_2,reset,conv_crit)
 
-        conv_iterator = conv_iterator + 1
         if (reset) then
           dt_scale = 0.25
           conv_failed = conv_failed + 1
@@ -236,7 +225,7 @@ contains
             print *, "ODEVEC: Convergence failed! Abortion, because timestep too small."
             stop
           end if
-          this%UpdateJac = .TRUE.
+          this%UpdateJac = .true.
           cycle predictor
         end if
       end do corrector
@@ -247,15 +236,18 @@ contains
       ! test, rerun from predictor with adjusted step size
       error = WeightedNorm(this,this%en,this%inv_weight_2)/ &
               tau(this%order,this%order,this%coeff)
+      call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
       if (error > 1d0) then
         dt_scale = 0.2
         call ResetSystem(this,dt_scale,dt,this%y_NS)
         lte_iterator = lte_iterator + 1
-        this%UpdateJac = .TRUE.
-!        this%dtorder_index = 0
+        this%UpdateJac = .true.
+        this%update_dtorder = .true.
+        this%dtorder_count = 0
         cycle predictor
       else
-        success = .TRUE.
+        this%dtorder_count = this%dtorder_count + 1
+        success = .true.
       end if
     end do predictor
 
@@ -265,15 +257,12 @@ contains
     ! advance in time
     t = t + dt
 
+    ! preparation for next step
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for order+(0,-1,+1) -> use largest for next step
-!    this%dtorder_index = this%dtorder_index - 1
-!    if (this%dtorder_index.EQ.0) then
-     call CalcStepSizeOrder(this,dt_scale,this%order)
-
-     ! Adjust the Nordsieck history array with new step size & new order
-     call SetStepSize(this,dt_scale,this%y_NS,dt)
-!    end if
+    if (this%update_dtorder.or.(this%dtorder_count.eq.this%order + 1)) then
+      call CalcStepSizeOrder(this,dt_scale,this%order,dt)
+    end if
 
     this%en_old = this%en
   end subroutine SolveLinearSystem
@@ -304,77 +293,104 @@ contains
   end subroutine
 
   !> Calculates the step-sizes and uses according orders
-  subroutine CalcStepSizeOrder(this,dt_scale,order)
+  subroutine CalcStepSizeOrder(this,dt_scale,order,dt)
     implicit none
     type(odevec)     :: this
     integer          :: dt_maxloc, order
-    double precision :: dt_scale, dt_scale_up, dt_scale_down, dt_upper_limit
+    double precision :: dt_scale, dt_scale_up, dt_scale_down, dt_upper_limit, dt
     intent(out)      :: dt_scale
-    intent(inout)    :: order,this
+    intent(inout)    :: order,this,dt
 
     ! calculate all estimated step sizes
+    ! for lower order
+    if (order.eq.1) then
+      dt_scale_down = 0.0
+    else
     dt_scale_down = 1.d0/(1.3*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order)/ &
                           tau(order,order-1,this%coeff))**(1d0/order) + 1d-6)
+    end if
+    ! for same order
     dt_scale      = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
                           tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
-    dt_scale_up   = 1.0d0/(1.4*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2)/ &
-                          tau(order,order+1,this%coeff))**(1d0/(order+2d0)) + 1d-6)
+    ! for higher order
+    if (order.eq.this%maxorder) then
+      dt_scale_up = 0d0
+    else
+      dt_scale_up   = 1.0d0/(1.4*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2)/ &
+                            tau(order,order+1,this%coeff))**(1d0/(order+2d0)) + 1d-6)
+    end if
 
     ! choose largest and search for location of largest
     dt_maxloc = maxloc((/ dt_scale_down, dt_scale, dt_scale_up /),DIM=1)
     dt_scale = maxval((/ dt_scale_down, dt_scale, dt_scale_up /))
 
     ! maximum increasement in step-size
-    dt_upper_limit = 10d0
+    if (this%FirstStep) then
+      dt_upper_limit = 1d4
+      this%FirstStep = .false.
+    else
+      dt_upper_limit = 10d0
+    end if
     dt_scale = min(dt_upper_limit,dt_scale)
 
     ! set new order
-    if (dt_maxloc == 1) then
-      if (order /= 1) then
-        order = order - 1
-      else
+    if (dt_scale.ge.1.1) then
+      if (dt_maxloc == 1) then
+        if (order /= 1) then
+          order = order - 1
+        else
+          ! do nothing
+        end if
+      else if (dt_maxloc == 2) then
         ! do nothing
-      end if
-    else if (dt_maxloc == 2) then
-      ! do nothing
-    else if (dt_maxloc == 3) then
-      if (order /= this%maxorder) then
-        this%y_NS(:,:,order+1) = this%coeff(order,order)*this%en(:,:)/(order+1d0)
-        order = order + 1
-      else
-        ! do nothing
+      else if (dt_maxloc == 3) then
+        if (order /= this%maxorder) then
+          this%y_NS(:,:,order+1) = this%coeff(order,order)*this%en(:,:)/(order+1d0)
+          order = order + 1
+        else
+          ! do nothing
+        end if
       end if
     end if
-    this%dtorder_index = order + 1
+
+    ! Adjust the Nordsieck history array with new step size & new order
+    call SetStepSize(this,dt_scale,this%y_NS,dt)
+
+    this%update_dtorder = .false.
+    this%dtorder_count = 0
   end subroutine
 
 
   !> Calculates the error for convergence
-  subroutine CheckConvergence(this,iterator,conv_rate,den,conv_error,inv_weight_2,reset)
+  subroutine CheckConvergence(this,iterator,conv_rate,den,conv_error,inv_weight_2,reset,conv_crit)
     implicit none
     type(odevec)     :: this
     integer          :: iterator
     logical          :: reset
-    double precision :: conv_rate, conv_rate2, conv_error_tmp, conv_error
+    double precision :: conv_rate, conv_rate2, conv_error_tmp, conv_error, conv_crit
     double precision, dimension(this%nvector,this%neq) :: den, inv_weight_2
-    intent(in)       :: den, inv_weight_2, iterator
-    intent(inout)    :: conv_rate, conv_error, reset
+    intent(in)       :: den, inv_weight_2
+    intent(inout)    :: conv_rate, conv_error, reset, iterator, conv_crit
 
     conv_error_tmp = WeightedNorm(this,den,inv_weight_2)
-    conv_rate2 = conv_error_tmp/conv_error
-    conv_rate = max(0.2d0*conv_rate,conv_rate2)
-    conv_error = conv_error_tmp*min(1d0,1.5d0*conv_rate)
-
-    if (iterator == 2 .and. conv_rate2 > 2d0) then
-      reset = .TRUE.
-    else if (iterator > 2 .and.  &
-            conv_error > tau(this%order,this%order,this%coeff)/(2d0*(this%order + 2d0))) then
-      reset = .TRUE.
-    else if (iterator > 3) then
-      reset = .TRUE.
-    else
-      reset = .FALSE.
+    if (iterator.ne.0) then
+      conv_rate2 = conv_error_tmp/conv_error
+      conv_rate = max(0.2d0*conv_rate,conv_rate2)
     end if
+    conv_crit = conv_error_tmp*min(1d0,1.5d0*conv_rate)/ &
+                 (tau(this%order,this%order,this%coeff)/(2d0*(this%order + 2d0)))
+
+
+    if (iterator.ge.2 .and. conv_rate.gt.2d0*conv_rate2) then
+      reset = .true.
+    else if (iterator.eq.3) then
+      reset = .true.
+    else
+      reset = .false.
+    end if
+
+    conv_error = conv_error_tmp
+    iterator = iterator + 1
   end subroutine CheckConvergence
 
 
@@ -499,7 +515,7 @@ contains
     integer         , dimension(this%neq)                       :: Piv
     integer        :: i,j,k
     intent(in)     :: LU,Piv,res
-    intent(out)    :: den
+    intent(inout)    :: den
 
 !NEC$ collapse
     do j=1,this%neq
@@ -508,18 +524,17 @@ contains
       end do
     end do
     ! lower system
-    do k = 1,this%neq,1
+    do k = 1,this%neq
       do j = 1,k-1
 !NEC$ ivdep
         do i = 1,this%nvector
-!          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,Piv(k),j)*this%den_tmp(i,j)
           this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,k,j)*this%den_tmp(i,j)
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
         this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
-        this%den_tmp(i,k) = this%den_tmp(i,k)!/LU(i,Piv(k),k)
+        this%den_tmp(i,k) = this%den_tmp(i,k)
       end do
     end do
 
@@ -534,14 +549,12 @@ contains
       do j = k+1,this%neq
 !NEC$ ivdep
         do i = 1,this%nvector
-!          den(i,k) = den(i,k) + LU(i,Piv(k),j)*den(i,j)
           den(i,k) = den(i,k) + LU(i,k,j)*den(i,j)
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
         den(i,k) = this%den_tmp(i,k) - den(i,k)
-!        den(i,k) = den(i,k)/LU(i,Piv(k),k)
         den(i,k) = den(i,k)/LU(i,k,k)
       end do
     end do
