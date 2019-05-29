@@ -130,10 +130,12 @@ contains
     intent(in)        :: t_stop
     intent(inout)     :: y, time, dt
 
+
     this%y_NS(:,:,0) = y(:,:)
 
-    ! Calculate initial right hand side
+    ! Calculate initial right hand side and step-size
     call GetRHS(this,y,this%rhs)
+    CALL CalcInitialStepSize(this,time,t_stop,y,dt)
     this%y_NS(:,:,1) = dt*this%rhs(:,:)
 
     ! main solve - solve the linear system
@@ -145,6 +147,25 @@ contains
     end do
     call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y)
   end subroutine
+
+  subroutine CalcInitialStepSize(this,time,t_stop,y,dt_init)
+    implicit none
+    type(odevec) :: this
+    double precision :: time, t_stop, dt_init, tol, W0
+    double precision, dimension(this%nvector,this%neq) :: W_inv2, y
+
+    ! needed in order to calculate the weighted norm
+    call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
+
+    tol = this%rtol
+    W_inv2 = this%inv_weight_2*tol*tol
+    W0 = max(abs(time),abs(t_stop))
+
+    dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2))/this%neq))
+
+    dt_init = min(dt_init,abs(t_stop-time))
+  end subroutine
+
 
   !> Solves a linear system for a given timestep
   subroutine SolveLinearSystem(this,t,dt,y,GetRHS,GetJac,GetLU)
