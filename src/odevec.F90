@@ -132,6 +132,10 @@ contains
 
     this%y_NS(:,:,0) = y(:,:)
 
+    ! Calculate initial right hand side
+    call GetRHS(this,y,this%rhs)
+    this%y_NS(:,:,1) = dt*this%rhs(:,:)
+
     ! main solve - solve the linear system
     do while (time < t_stop)
       ! solve the system
@@ -157,11 +161,6 @@ contains
 
     ! 1. initialization -------------------------------------------------------!
     ! use the LU matrices from the predictor value
-
-    ! Calculate initial right hand side
-    call GetRHS(this,y,this%rhs)
-    this%y_NS(:,:,1) = dt*this%rhs(:,:)
-
     ! some initializations
     this%den      = 0.0d0
     conv_rate     = 0.7d0
