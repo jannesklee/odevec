@@ -229,6 +229,23 @@ def GetSystemToSolve(nvector,example,kromefile=""):
                       - k[37] * y[idx_Dj] * y[idx_E],
                       + k[6] * y[idx_HEj] * y[idx_E] - k[7] * y[idx_HEjj] * y[idx_E],
                       0.0, 0.0, 0.0, 0.0])
+    elif (example=="OREGO"):
+        print("#  Setup: OREGO test")
+
+        neq = 3
+        nrea = 0
+
+	# define sympy symbols
+        y = list(symbols('y(i\,1:%d)'%(neq+1)))
+
+        k1 = 77.27
+        k2 = 8.375e-6
+        k3 = 0.161
+
+        rhs = Matrix([k1*y[0]+k1*y[1]-k1*k2*y[0]**2-k1*y[0]*y[1],
+		      1.0/k1*y[2]-1.0/k1*y[1]-1.0/k1*y[0]*y[1],
+                      k3*y[0]-k3*y[2]])
+        print (rhs)
 
     # Arbitrary networks for usage in KROME
     elif (example=="KROME"):
@@ -633,6 +650,8 @@ if __name__ == '__main__':
         copyfile("tests/rober.f90","build/test.f90")
     elif(args.example=="PRIMORDIAL"):
         copyfile("tests/primordial.f90","build/test.f90")
+    elif(args.example=="OREGO"):
+        copyfile("tests/orego.f90","build/test.f90")
     elif(args.example=="KROME"):
         pass
 
