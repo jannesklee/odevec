@@ -24,7 +24,7 @@ program orego
       ode%y(i,:) = (/ 1.0, 2.0, 3.0/)
     end do
 
-    t_stop = 0.01
+    t_stop = 1.0
     print *, t_start, ode%y(1,:)
     do while (t_stop  <= 360.0)
       dt = 1d-10
