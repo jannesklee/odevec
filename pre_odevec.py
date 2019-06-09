@@ -245,7 +245,6 @@ def GetSystemToSolve(nvector,example,kromefile=""):
         rhs = Matrix([k1*y[0]+k1*y[1]-k1*k2*y[0]**2-k1*y[0]*y[1],
 		      1.0/k1*y[2]-1.0/k1*y[1]-1.0/k1*y[0]*y[1],
                       k3*y[0]-k3*y[2]])
-        print (rhs)
 
     # Arbitrary networks for usage in KROME
     elif (example=="KROME"):
