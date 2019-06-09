@@ -21,10 +21,17 @@ build_primordial:
     only:
         - master
 
-test_primordial:
-    stage: test
+build_primordial_packed_ordered:
+    stage: build
     script:
-        - ./build/primordial
+        - python pre_odevec.py --packaging="CSC" --ordering="FF" --nvector=32 --example="PRIMORDIAL"
+        - cd build
+        - gfortran -O2 -c -g -cpp -DHAVE_COEFFICIENTS -fcheck=all -fno-range-check -Wall -fbacktrace odevec.f90 odevec_commons.f90 test.f90
+        - gfortran -O2 -o primordial_po *.o
+    artifacts:
+        expire_in: 4 weeks
+        paths:
+        - build/primordial_po
     only:
         - master
 
@@ -42,9 +49,44 @@ build_rober:
     only:
         - master
 
+build_orego:
+    stage: build
+    script:
+        - python pre_odevec.py --nvector=32 --example="OREGO"
+        - cd build
+        - gfortran -O2 -c -g -cpp -fcheck=all -fno-range-check -Wall -fbacktrace odevec.f90 odevec_commons.f90 test.f90
+        - gfortran -O2 -o orego *.o
+    artifacts:
+        expire_in: 4 weeks
+        paths:
+        - build/orego
+    only:
+        - master
+
+test_primordial:
+    stage: test
+    script:
+        - ./build/primordial
+    only:
+        - master
+
+test_primordial_po:
+    stage: test
+    script:
+        - ./build/primordial_po
+    only:
+        - master
+
 test_rober:
     stage: test
     script:
         - ./build/rober
+    only:
+        - master
+
+test_orego:
+    stage: test
+    script:
+        - ./build/orego
     only:
         - master
