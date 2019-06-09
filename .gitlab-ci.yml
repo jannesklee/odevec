@@ -1,6 +1,6 @@
 before_script:
     - module load gfortran/6.2
-    - module load anaconda3
+    - module load anaconda3/2019-03
 
 stages:
     - build
