@@ -7,7 +7,7 @@ stages:
     - test
     - deploy
 
-build1:
+build_primordial:
     stage: build
     script:
         - python pre_odevec.py --nvector=32 --example="PRIMORDIAL"
@@ -21,9 +21,30 @@ build1:
     only:
         - master
 
-test1:
+test_primordial:
     stage: test
     script:
         - ./build/primordial
+    only:
+        - master
+
+build_rober:
+    stage: build
+    script:
+        - python pre_odevec.py --nvector=32 --example="ROBER"
+        - cd build
+        - gfortran -O2 -c -g -cpp -fcheck=all -fno-range-check -Wall -fbacktrace odevec.f90 odevec_commons.f90 test.f90
+        - gfortran -O2 -o rober *.o
+    artifacts:
+        expire_in: 4 weeks
+        paths:
+        - build/rober
+    only:
+        - master
+
+test_rober:
+    stage: test
+    script:
+        - ./build/rober
     only:
         - master
