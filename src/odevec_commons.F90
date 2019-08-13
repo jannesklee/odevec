@@ -46,11 +46,7 @@ module odevec_commons
 #endif
 
 !NEC$ ivdep
-    do i=1,this%nvector
-
 #ODEVEC_JAC
-
-    end do
 
   end subroutine GetJac
 
@@ -71,11 +67,8 @@ module odevec_commons
 #endif
 
 !NEC$ ivdep
-    do i=1,this%nvector
-
 #ODEVEC_LU
 
-    end do
   end subroutine GetLU
 
 
@@ -97,9 +90,8 @@ module odevec_commons
 #endif
 
 !NEC$ ivdep
-    do i=1,this%nvector
 #ODEVEC_RHS
-    end do
+
   end subroutine GetRHS
 
 
