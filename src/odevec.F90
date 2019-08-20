@@ -42,6 +42,7 @@ module odevec_main
     logical :: UpdateJac
     logical :: FirstStep
     logical :: update_dtorder
+    logical :: check_negatives = .false.
 
     double precision :: rtol                                !> relative tolerance
     double precision :: atol                                !> absolute tolerance
@@ -266,6 +267,10 @@ contains
         ! times the step-size
         call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
                               conv_error,this%inv_weight_2,reset,conv_crit)
+
+        if (this%check_negatives) then
+          if(ANY(y.lt.-TINY(y))) reset=.true.
+        end if
 
         if (reset) then
           dt_scale = 0.25
