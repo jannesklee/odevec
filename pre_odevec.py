@@ -93,7 +93,7 @@ def GetSystemToSolve(nvector,example,kromefile=""):
         nrea = 0
 
         # define sympy symbols
-        y = list(symbols('y(\:\,1:%d)'%(neq+1)))
+        y = list(symbols('y(i\,1:%d)'%(neq+1)))
 
         rhs = Matrix([-0.04*y[0]+1e4*y[1]*y[2],
                       0.04*y[0]-3e7*y[1]*y[1]-1e4*y[1]*y[2],
@@ -125,8 +125,8 @@ def GetSystemToSolve(nvector,example,kromefile=""):
         idx_dummy = 15
 
         # define sympy symbols
-        y = list(symbols('y(\:\,1:%d)' % (neq + 1)))
-        k = list(symbols('k(\:\,1:%d)' % (nrea + 1)))
+        y = list(symbols('y(i\,1:%d)' % (neq + 1)))
+        k = list(symbols('k(i\,1:%d)' % (nrea + 1)))
 
         # RHS of primordial network
         rhs = Matrix([- k[0] * y[idx_H] * y[idx_E] + 2.e0 * k[0] * y[idx_H] * y[idx_E]
@@ -257,7 +257,7 @@ def GetSystemToSolve(nvector,example,kromefile=""):
         nrea = 0
 
         # define sympy symbols
-        y = list(symbols('y(\:\,1:%d)'%(neq+1)))
+        y = list(symbols('y(i\,1:%d)'%(neq+1)))
 
         k1 = 77.27
         k2 = 8.375e-6
@@ -314,27 +314,26 @@ def ReplacePragmas(fh_list, fout):
                                           fcode(LU.col_list()[i][2], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_JAC"):
                 if (args.packaging=="DENSE"):
-                    for i in range(jac.shape[0]):
-                        for j in range(jac.shape[1]):
+                    for j in range(jac.shape[1]):
+                        for i in range(jac.shape[0]):
                             if(args.heatcool==1):
                                 if((i==neq-2 and j==neq-2)): #Tgas
-                                        fout[k].write("      dyy(:) = y(:," + str(i+1) +")*1d-3\n")
-                                        fout[k].write("      yy(:,:) = y(:,:)\n")
-                                        fout[k].write("      yy(:," + str(i+1) + ") = y(:," + str(i+1) +") + dyy(:)\n")
+                                        fout[k].write("      dyy(:) = y(:," + str(j+1) + ")*1d-2\n")
+                                        fout[k].write("      yy(:," + str(j+1) + ") = y(:," + str(j+1) +") + dyy(:)\n")
                                         fout[k].write("      call GetRHS(this,yy(:,:),dy(:,:))\n")
-                                        fout[k].write("      do i=1,nspec-2\n")
+                                        fout[k].write("      do i=1,this%neq\n")
                                         fout[k].write("        jac(:,i,"+ str(j+1) + ") = -beta*dt*(dy(:,i)/dyy(:))\n")
                                         fout[k].write("      end do\n")
-                                        fout[k].write("      jac(:,"+ str(i+1) +","+ str(j+1) + ") = 1.0-beta*dt*(dy(:,i)/dyy(:))\n")
-                                elif((j==neq-2) and (i<neq-4)): #Tgas
+                                        fout[k].write("      jac(:,"+ str(i+1) +","+ str(j+1) + ") = 1.0+jac(:,"+ str(i+1) +","+ str(j+1) + ")\n")
+                                elif((i==neq-2) and (j!=neq-2) and (j<neq-4)): #Tgas
                                         fout[k].write("      yy(:,:) = y(:,:)\n")
-                                        fout[k].write("      dyy(:) = y(:," + str(i+1) +")*1d-3\n")
-                                        fout[k].write("      yy(:," + str(i+1) + ") = y(:," + str(i+1) +") + dyy(:)\n")
+                                        fout[k].write("      dyy(:) = y(:," + str(j+1) +")*1d-2\n")
+                                        fout[k].write("      yy(:," + str(j+1) + ") = y(:," + str(j+1) +") + dyy(:)\n")
                                         fout[k].write("      dy1(:) = " + krome_heatcool_string + "\n")
                                         fout[k].write("      where (dyy>0d0)\n")
                                         fout[k].write("          jac(:,"+ str(i+1) + "," + str(j+1) + ") = -beta*dt*(dy1(:)-dy0(:))/dyy(:)\n")
                                         fout[k].write("      end where\n")
-                                elif((i==neq-2) and not(j==neq-2) ): #Tgas
+                                elif(not (i==neq-2) and (j==neq-2) ): #Tgas
                                         pass
                                 else:
                                         fout[k].write("      jac(:," + str(i + 1) + "," + str(j + 1) + ") = " +
@@ -353,15 +352,15 @@ def ReplacePragmas(fh_list, fout):
             elif(srow == "#ODEVEC_RHS"):
                 for i in range(rhs.shape[0]):
                     if((i==neq-2) and (args.heatcool==1)):
-                        fout[k].write("      rhs(:," + str(i + 1) + ") = " + krome_heatcool_string + "\n")
-                    elif((i==neq-2) and (args.heatcool==1)):
+                        fout[k].write("      rhs(:," + str(i + 1) + ") = " + krome_heatcool_string0 + "\n")
+                    elif((i==neq-2) and (args.heatcool!=1)):
                         fout[k].write("      rhs(:," + str(i + 1) + ") = 0.0d0\n")
                     else:
                         fout[k].write("      rhs(:," + str(i + 1) + ") = " +
                                       fcode(rhs[i], source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_DY0"):
                 if(args.heatcool==1):
-                        fout[k].write("      dy0(:) = " + krome_heatcool_string + "\n")
+                        fout[k].write("      dy0(:) = " + krome_heatcool_string0 + "\n")
             elif(srow == "#ODEVEC_PERMUTATIONS"):
                 fout[k].write( "    this%Perm = " +
                               fcode(Perm+1, source_format='free', standard=95) + "\n")
@@ -717,8 +716,11 @@ if __name__ == '__main__':
     elif(args.example=="KROME"):
         pass
 
-    krome_heatcool_string = "(heating(y(:,:), Tgas(:), k(:,:), nH2dust(:)) &\n \
+    krome_heatcool_string0 = "(heating(y(:,:), Tgas(:), k(:,:), nH2dust(:)) &\n \
              - cooling(y(:,:), Tgas(:)) #KROME_coolingQuench #KROME_coolfloor) &\n \
+             * (krome_gamma(:) - 1.d0) / boltzmann_erg / sum(y(:,1:nmols),dim=2)"
+    krome_heatcool_string = "(heating(yy(:,:), Tgas(:), k(:,:), nH2dust(:)) &\n \
+             - cooling(yy(:,:), Tgas(:)) #KROME_coolingQuench #KROME_coolfloor) &\n \
              * (krome_gamma(:) - 1.d0) / boltzmann_erg / sum(y(:,1:nmols),dim=2)"
 
     # search for pragmas and replace them with the correct
