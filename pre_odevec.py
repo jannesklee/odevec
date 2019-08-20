@@ -93,7 +93,7 @@ def GetSystemToSolve(nvector,example,kromefile=""):
         nrea = 0
 
         # define sympy symbols
-        y = list(symbols('y(i\,1:%d)'%(neq+1)))
+        y = list(symbols('y(\:\,1:%d)'%(neq+1)))
 
         rhs = Matrix([-0.04*y[0]+1e4*y[1]*y[2],
                       0.04*y[0]-3e7*y[1]*y[1]-1e4*y[1]*y[2],
@@ -125,8 +125,8 @@ def GetSystemToSolve(nvector,example,kromefile=""):
         idx_dummy = 15
 
         # define sympy symbols
-        y = list(symbols('y(i\,1:%d)' % (neq + 1)))
-        k = list(symbols('k(i\,1:%d)' % (nrea + 1)))
+        y = list(symbols('y(\:\,1:%d)' % (neq + 1)))
+        k = list(symbols('k(\:\,1:%d)' % (nrea + 1)))
 
         # RHS of primordial network
         rhs = Matrix([- k[0] * y[idx_H] * y[idx_E] + 2.e0 * k[0] * y[idx_H] * y[idx_E]
@@ -257,7 +257,7 @@ def GetSystemToSolve(nvector,example,kromefile=""):
         nrea = 0
 
         # define sympy symbols
-        y = list(symbols('y(i\,1:%d)'%(neq+1)))
+        y = list(symbols('y(\:\,1:%d)'%(neq+1)))
 
         k1 = 77.27
         k2 = 8.375e-6
@@ -353,8 +353,8 @@ def ReplacePragmas(fh_list, fout):
                 for i in range(rhs.shape[0]):
                     if((i==neq-2) and (args.heatcool==1)):
                         fout[k].write("      rhs(:," + str(i + 1) + ") = " + krome_heatcool_string0 + "\n")
-                    elif((i==neq-2) and (args.heatcool!=1)):
-                        fout[k].write("      rhs(:," + str(i + 1) + ") = 0.0d0\n")
+#                    elif((i==neq-2) and (args.heatcool!=1)):
+#                        fout[k].write("      rhs(:," + str(i + 1) + ") = 0.0d0\n")
                     else:
                         fout[k].write("      rhs(:," + str(i + 1) + ") = " +
                                       fcode(rhs[i], source_format='free', standard=95) + "\n")
