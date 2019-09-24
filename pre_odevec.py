@@ -301,7 +301,7 @@ def ReplacePragmas(fh_list, fout):
         for row in fh:
             srow = row.strip()
             if(srow == "#ODEVEC_LU"):
-                if(np.shape(P)[0] < args.maxsize):
+                if(args.useLU==1):
                     if (args.packaging=="DENSE"):
                         for i in range(LU.shape[0]):
                             for j in range(LU.shape[1]):
@@ -353,8 +353,6 @@ def ReplacePragmas(fh_list, fout):
                 for i in range(rhs.shape[0]):
                     if((i==neq-2) and (args.heatcool==1)):
                         fout[k].write("      rhs(:," + str(i + 1) + ") = " + krome_heatcool_string0 + "\n")
-#                    elif((i==neq-2) and (args.heatcool!=1)):
-#                        fout[k].write("      rhs(:," + str(i + 1) + ") = 0.0d0\n")
                     else:
                         fout[k].write("      rhs(:," + str(i + 1) + ") = " +
                                       fcode(rhs[i], source_format='free', standard=95) + "\n")
@@ -365,10 +363,10 @@ def ReplacePragmas(fh_list, fout):
                 fout[k].write( "    this%Perm = " +
                               fcode(Perm+1, source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_LU_PRESENT"):
-#                if(np.shape(P)[0] < args.maxsize):
-#                    fout[k].write("    logical :: LU_PRESENT = .TRUE.\n")
-#                else:
-                    fout[k].write("    logical :: LU_PRESENT = .FALSE.\n")
+                if(args.useLU==1):
+                    fout[k].write("    logical :: LU_PRESENT = .true.\n")
+                else:
+                    fout[k].write("    logical :: LU_PRESENT = .false.\n")
             elif(srow == "#ODEVEC_ALLOCATE_LU"):
                 if (args.packaging=="DENSE"):
                     fout[k].write( "    allocate(this%LU(this%nvector,this%neq,this%neq),STAT=err)\n" +
@@ -575,10 +573,10 @@ if __name__ == '__main__':
             default=None,
             help='path to an extra file from krome providing the ode')
     parser.add_argument(
-            '--maxsize',
+            '--useLU',
             type=int,
-            default=5,
-            help='maximum size of the Jacobian, which should still be symbolically LU-decomposed')
+            default=0,
+            help='try to use symbolic LU (writes down LU decomposed)')
     parser.add_argument(
             '--dt_min',
             default=1e-10,
@@ -651,7 +649,7 @@ if __name__ == '__main__':
         Perm = np.arange(len(rhs))
 
     # only run symbolic LU-decompostion if the system is not too large
-    maxsize = args.maxsize
+    useLU = args.useLU
 
     print("#  Evaluating L and U matrices and check for sparsity structure..")
     LU, Piv = P_order.LUdecomposition_Simple()
@@ -733,7 +731,7 @@ if __name__ == '__main__':
         print("#  Sparsity structures..")
         print("#  sparsity structure of Jacobian:")
         P.print_nonzero()
-        if(np.shape(P)[0] < maxsize):
+        if(useLU==1):
             print("#  sparsity structure of LU:")
             LU.print_nonzero()
 

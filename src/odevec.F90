@@ -25,7 +25,7 @@
 module odevec_main
   implicit none
 
-  type :: CSC_Matrix
+  type :: csc_matrix
     double precision, pointer, dimension(:,:) :: sdata
     integer, pointer, dimension(:) :: u_col_start, l_col_start, row_index
   end type
@@ -230,8 +230,7 @@ contains
 
       if (this%UpdateJac) then
         if (this%LU_PRESENT) then
-          call GetLU(this,this%coeff(this%order,0),y,dt,this%LU,this%Piv)
-          this%Piv = [(i, i=1, this%neq)]
+          call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
         else
           call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
           call LUDecompose(this,this%LU,this%Piv)
@@ -508,6 +507,7 @@ contains
       dtt_scale = dt_scale*dtt_scale
 !NEC$ collapse
       do j = 1,this%neq
+!NEC$ ivdep
         do i = 1,this%nvector
           y_NS(i,j,k) = y_NS(i,j,k)*dtt_scale
         end do
@@ -531,6 +531,7 @@ contains
     do k = 0,this%order
 !NEC$ collapse
       do j = 1,this%neq
+!NEC$ ivdep
         do i = 1,this%nvector
           y_NS(i,j,k) = y_NS(i,j,k) + en(i,j)*this%coeff(this%order,k)
         end do
@@ -554,6 +555,7 @@ contains
       do k = this%order,l+1,-1
 !NEC$ collapse
         do j = 1,this%neq
+!NEC$ ivdep
           do i = 1,this%nvector
             y_NS(i,j,k-1) = y_NS(i,j,k) + y_NS(i,j,k-1)
           end do
