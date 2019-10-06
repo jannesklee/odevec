@@ -301,7 +301,7 @@ def ReplacePragmas(fh_list, fout):
         for row in fh:
             srow = row.strip()
             if(srow == "#ODEVEC_LU"):
-                if(args.useLU==1):
+                if(args.LUmethod==2):
                     if (args.packaging=="DENSE"):
                         for i in range(LU.shape[0]):
                             for j in range(LU.shape[1]):
@@ -362,11 +362,8 @@ def ReplacePragmas(fh_list, fout):
             elif(srow == "#ODEVEC_PERMUTATIONS"):
                 fout[k].write( "    this%Perm = " +
                               fcode(Perm+1, source_format='free', standard=95) + "\n")
-            elif(srow == "#ODEVEC_LU_PRESENT"):
-                if(args.useLU==1):
-                    fout[k].write("    logical :: LU_PRESENT = .true.\n")
-                else:
-                    fout[k].write("    logical :: LU_PRESENT = .false.\n")
+            elif(srow == "#ODEVEC_LU_METHOD"):
+                fout[k].write("    INTEGER :: LUmethod = " + str(int(LUmethod)) + "\n")
             elif(srow == "#ODEVEC_ALLOCATE_LU"):
                 if (args.packaging=="DENSE"):
                     fout[k].write( "    allocate(this%LU(this%nvector,this%neq,this%neq),STAT=err)\n" +
@@ -573,10 +570,10 @@ if __name__ == '__main__':
             default=None,
             help='path to an extra file from krome providing the ode')
     parser.add_argument(
-            '--useLU',
+            '--LUmethod',
             type=int,
-            default=0,
-            help='try to use symbolic LU (writes down LU decomposed)')
+            default=1,
+            help='states how to calculate LU (Jacobian) method')
     parser.add_argument(
             '--dt_min',
             default=1e-10,
@@ -649,7 +646,7 @@ if __name__ == '__main__':
         Perm = np.arange(len(rhs))
 
     # only run symbolic LU-decompostion if the system is not too large
-    useLU = args.useLU
+    LUmethod = args.LUmethod
 
     print("#  Evaluating L and U matrices and check for sparsity structure..")
     LU, Piv = P_order.LUdecomposition_Simple()

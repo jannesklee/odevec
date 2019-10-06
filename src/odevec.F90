@@ -63,7 +63,7 @@ module odevec_main
                                                             !> precomputation
     double precision, pointer, dimension(:,:,:) :: y_NS     !> Nordsieck history array
 #ODEVEC_LU_MATRIX
-#ODEVEC_LU_PRESENT
+#ODEVEC_LU_METHOD
 #ODEVEC_PACKAGING
   end type
 
@@ -232,10 +232,13 @@ contains
       corrector: do while (conv_crit.gt.1.0 .or. conv_iterator.eq.0)
 
         if (this%UpdateJac) then
-          if (this%LU_PRESENT) then
-            call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
-          else
+          if (this%LUmethod.eq.1) then
             call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
+            call LUDecompose(this,this%LU,this%Piv)
+          else if (this%LUmethod.eq.2) then
+            call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
+          else if (this%LUmethod.eq.3) then
+            call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU)
             call LUDecompose(this,this%LU,this%Piv)
           end if
           this%UpdateJac = .false.
@@ -327,6 +330,42 @@ contains
 
     this%en_old = this%en
   end subroutine SolveLinearSystem
+
+
+  !> Calculates the Jacobian numerically
+  subroutine CalcJac(this,beta,GetRHS,y,dt,jac)
+    implicit none
+    type(odevec)     :: this
+    integer          :: j,k,i
+    external         :: GetRHS
+    double precision :: beta,srur, dt
+    double precision, dimension(this%nvector) :: deltay, r, fac, r0
+    double precision, dimension(this%nvector,this%neq) :: y,ytmp, Drhs
+    double precision, dimension(this%nvector,this%neq,this%neq) :: jac
+
+    call GetRHS(this, y, this%rhs)
+    fac(:) = WeightedNorm(this, this%rhs, this%inv_weight_2)
+    r0 = 1d3*abs(dt)*1.0*this%neq*fac
+    where (r0 .EQ. 0d0)
+      r0 = 1d0
+    end where
+    srur = 1.0! WM(1) ! is not 1.0! Find out value
+    do k = 1,this%neq
+      ytmp(:,k) = y(:,k)
+      r(:) = MAX(srur*abs(y(:,k)),r0(:)/this%inv_weight_2(:,k))
+      y(:,k) = y(:,k) + r
+      fac(:) = -dt*beta/r
+      call GetRHS(this, y, Drhs)
+      do j = 1,this%neq
+        jac(:,j,k) = (Drhs(:,j) - this%rhs(:,j))*fac
+      end do
+      y(:,k) = ytmp(:,k)
+    end do
+    do j = 1,this%neq
+      jac(:,j,j) = 1 + jac(:,j,j)
+    end do
+
+  end subroutine CalcJac
 
   !> Resets the whole system to the state where the predictor starts
   subroutine ResetSystem(this,dt_scale,dt,y_NS)
