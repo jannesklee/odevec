@@ -228,18 +228,20 @@ contains
       call PredictSolution(this,this%y_NS,this%en)
       y(:,:) = this%y_NS(:,:,0)
 
-      if (this%UpdateJac) then
-        if (this%LU_PRESENT) then
-          call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
-        else
-          call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
-          call LUDecompose(this,this%LU,this%Piv)
-        end if
-        this%UpdateJac = .false.
-      end if
-
       ! 3. corrector ----------------------------------------------------------!
       corrector: do while (conv_crit.gt.1.0 .or. conv_iterator.eq.0)
+
+        if (this%UpdateJac) then
+          if (this%LU_PRESENT) then
+            call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
+          else
+            call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
+            call LUDecompose(this,this%LU,this%Piv)
+          end if
+          this%UpdateJac = .false.
+        end if
+
+
         ! calculates residuum
         call CalcResiduum(this,GetRHS,y,dt,this%res)
 
