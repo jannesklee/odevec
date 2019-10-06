@@ -632,12 +632,14 @@ contains
 !NEC$ ivdep
         do i = 1,this%nvector
           this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,k,j)*this%den_tmp(i,j)
+!          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,Piv(k),j)*this%den_tmp(i,j)
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
         this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
         this%den_tmp(i,k) = this%den_tmp(i,k)
+!        this%den_tmp(i,k) = this%den_tmp(i,k)/LU(i,Piv(k),k)
       end do
     end do
 
@@ -653,12 +655,14 @@ contains
 !NEC$ ivdep
         do i = 1,this%nvector
           den(i,k) = den(i,k) + LU(i,k,j)*den(i,j)
+!          den(i,k) = den(i,k) + LU(i,Piv(k),j)*den(i,j)
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
         den(i,k) = this%den_tmp(i,k) - den(i,k)
         den(i,k) = den(i,k)/LU(i,k,k)
+!        den(i,k) = den(i,k)/LU(i,Piv(k),k)
       end do
     end do
 
