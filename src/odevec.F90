@@ -78,6 +78,9 @@ module odevec_main
   interface SolveLU
     module procedure SolveLU_dense, SolveLU_sparse
   end interface
+  interface CalcJac
+    module procedure CalcJac_dense, CalcJac_sparse
+  end interface
 
 contains
 
@@ -333,14 +336,14 @@ contains
 
 
   !> Calculates the Jacobian numerically
-  subroutine CalcJac(this,beta,GetRHS,y,dt,jac)
+  subroutine CalcJac_dense(this,beta,GetRHS,y,dt,jac)
     implicit none
     type(odevec)     :: this
     integer          :: j,k,i
     external         :: GetRHS
     double precision :: beta,srur, dt
     double precision, dimension(this%nvector) :: deltay, r, fac, r0
-    double precision, dimension(this%nvector,this%neq) :: y,ytmp, Drhs
+    double precision, dimension(this%nvector,this%neq) :: y,ytmp,Drhs
     double precision, dimension(this%nvector,this%neq,this%neq) :: jac
 
     call GetRHS(this, y, this%rhs)
@@ -353,7 +356,7 @@ contains
     do k = 1,this%neq
       ytmp(:,k) = y(:,k)
       r(:) = MAX(srur*abs(y(:,k)),r0(:)/this%inv_weight_2(:,k))
-      y(:,k) = y(:,k) + r
+      y(:,k) = y(:,k) + r(:)
       fac(:) = -dt*beta/r
       call GetRHS(this, y, Drhs)
       do j = 1,this%neq
@@ -365,7 +368,23 @@ contains
       jac(:,j,j) = 1 + jac(:,j,j)
     end do
 
-  end subroutine CalcJac
+  end subroutine CalcJac_dense
+
+  !> Calculates the Jacobian numerically
+  subroutine CalcJac_sparse(this,beta,GetRHS,y,dt,jac)
+    implicit none
+    type(odevec)     :: this
+    integer          :: j,k,i
+    external         :: GetRHS
+    double precision :: beta,srur, dt
+    double precision, dimension(this%nvector) :: deltay, r, fac, r0
+    double precision, dimension(this%nvector,this%neq) :: y,ytmp,Drhs
+    type(csc_matrix) :: jac
+
+
+    print *, "The Method Flags LUmethod=3 is not supported with sparse matrices, yet. Aborting..."
+    stop
+  end subroutine CalcJac_sparse
 
   !> Resets the whole system to the state where the predictor starts
   subroutine ResetSystem(this,dt_scale,dt,y_NS)
@@ -376,6 +395,7 @@ contains
     double precision, dimension(this%nvector,this%neq,0:6) :: y_NS
     intent(in)       :: dt_scale
     intent(inout)    :: y_NS, dt
+
 
     ! set the matrix back to old value
     do k = 0,this%order-1
