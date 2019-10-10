@@ -40,6 +40,7 @@ module odevec_main
     integer :: order                                        !> current order
     integer :: dtorder_count                                !> last step-size/order change
     logical :: UpdateJac
+    integer :: UpdateJac_count
     logical :: FirstStep
     logical :: update_dtorder
     logical :: check_negatives = .false.
@@ -142,7 +143,7 @@ contains
     this%iterator    = 0
     this%dtorder_count = 0
     this%update_dtorder = .true.
-
+    this%UpdateJac_count = 0
 
   end subroutine
 
@@ -156,7 +157,6 @@ contains
     double precision, dimension(this%nvector,this%neq) :: y
     intent(in)        :: t_stop
     intent(inout)     :: y, time, dt
-
 
     this%y_NS(:,:,0) = y(:,:)
 
@@ -200,7 +200,7 @@ contains
     type(odevec) :: this
     external          :: GetRHS,GetJac,GetLU
     double precision, dimension(this%nvector,this%neq) :: y
-    double precision :: dt, t, dt_scale
+    double precision :: dt, t, dt_scale, told
     integer          :: i,j,k
     double precision :: conv_error, conv_rate, conv_crit, error
     integer          :: conv_iterator, conv_failed, lte_iterator
@@ -220,32 +220,38 @@ contains
     ! needed in order to calculate the weighted norm
     call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
 
+    ! advance in time
+    told = t
+
     ! 2. predictor ------------------------------------------------------------!
     success = .false.
     predictor: do while(.not. success)
       reset = .false.
-      conv_rate     = 0.7d0
       conv_iterator = 0
+
+      t = t + dt
 
       ! predictor step - set predicted y_NS, en=0.0
       call PredictSolution(this,this%y_NS,this%en)
       y(:,:) = this%y_NS(:,:,0)
 
+      if (this%UpdateJac) then
+        if (this%LUmethod.eq.1) then
+          call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
+          call LUDecompose(this,this%LU,this%Piv)
+        else if (this%LUmethod.eq.2) then
+          call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
+        else if (this%LUmethod.eq.3) then
+          call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU)
+          call LUDecompose(this,this%LU,this%Piv)
+        end if
+        this%UpdateJac = .false.
+        this%UpdateJac_count = 0
+        conv_rate     = 0.7d0
+      end if
+
       ! 3. corrector ----------------------------------------------------------!
       corrector: do while (conv_crit.gt.1.0 .or. conv_iterator.eq.0)
-
-        if (this%UpdateJac) then
-          if (this%LUmethod.eq.1) then
-            call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
-            call LUDecompose(this,this%LU,this%Piv)
-          else if (this%LUmethod.eq.2) then
-            call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
-          else if (this%LUmethod.eq.3) then
-            call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU)
-            call LUDecompose(this,this%LU,this%Piv)
-          end if
-          this%UpdateJac = .false.
-        end if
 
 
         ! calculates residuum
@@ -281,6 +287,7 @@ contains
 
         if (reset) then
           dt_scale = 0.25
+          t = told
           conv_failed = conv_failed + 1
           if (conv_failed .gt. 10) then
             print *, "ODEVEC: Convergence failed! Abortion after more than 10 iterations."
@@ -306,6 +313,7 @@ contains
       call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
       if (error > 1d0) then
         dt_scale = 0.2
+        t = told
         call ResetSystem(this,dt_scale,dt,this%y_NS)
         lte_iterator = lte_iterator + 1
         this%UpdateJac = .true.
@@ -314,6 +322,7 @@ contains
         cycle predictor
       else
         this%dtorder_count = this%dtorder_count + 1
+        this%UpdateJac_count = this%UpdateJac_count + 1
         success = .true.
       end if
     end do predictor
@@ -321,8 +330,9 @@ contains
     ! after a successfull run rewrite the history array
     call UpdateNordsieck(this,this%en,this%y_NS)
 
-    ! advance in time
-    t = t + dt
+    if (this%UpdateJac_count.ge.20) then
+      this%UpdateJac = .true.
+    end if
 
     ! preparation for next step
     ! 4. step-size/order control ----------------------------------------------!
@@ -417,7 +427,7 @@ contains
     implicit none
     type(odevec)     :: this
     integer          :: dt_maxloc, order
-    double precision :: dt_scale, dt_scale_up, dt_scale_down, dt_upper_limit, dt
+    double precision :: dt_scale, dt_scale_same, dt_scale_up, dt_scale_down, dt_upper_limit, dt
     intent(out)      :: dt_scale
     intent(inout)    :: order,this,dt
 
@@ -430,7 +440,7 @@ contains
                           tau(order,order-1,this%coeff))**(1d0/order) + 1d-6)
     end if
     ! for same order
-    dt_scale      = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
+    dt_scale_same = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
                           tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
     ! for higher order
     if (order.eq.this%maxorder) then
@@ -441,8 +451,30 @@ contains
     end if
 
     ! choose largest and search for location of largest
-    dt_maxloc = maxloc((/ dt_scale_down, dt_scale, dt_scale_up /),DIM=1)
-    dt_scale = maxval((/ dt_scale_down, dt_scale, dt_scale_up /))
+    dt_maxloc = maxloc((/ dt_scale_down, dt_scale_same, dt_scale_up /),DIM=1)
+    dt_scale = maxval((/ dt_scale_down, dt_scale_same, dt_scale_up /))
+
+    ! set new order
+    if (dt_scale.ge.1.1) then
+      if (dt_maxloc == 1) then
+        if (order /= 1) then
+          order = order - 1
+        else
+          dt_scale = dt_scale_same
+        end if
+      else if (dt_maxloc == 2) then
+        dt_scale = dt_scale_same
+        ! do nothing
+      else if (dt_maxloc == 3) then
+        if (order /= this%maxorder) then
+          this%y_NS(:,:,order+1) = this%coeff(order,order)*this%en(:,:)/(order+1d0)
+          order = order + 1
+        else
+          dt_scale = dt_scale_same
+        end if
+      end if
+        dt_scale = dt_scale_same
+    end if
 
     ! maximum increasement in step-size
     if (this%FirstStep) then
@@ -453,25 +485,6 @@ contains
     end if
     dt_scale = min(dt_upper_limit,dt_scale)
 
-    ! set new order
-    if (dt_scale.ge.1.1) then
-      if (dt_maxloc == 1) then
-        if (order /= 1) then
-          order = order - 1
-        else
-          ! do nothing
-        end if
-      else if (dt_maxloc == 2) then
-        ! do nothing
-      else if (dt_maxloc == 3) then
-        if (order /= this%maxorder) then
-          this%y_NS(:,:,order+1) = this%coeff(order,order)*this%en(:,:)/(order+1d0)
-          order = order + 1
-        else
-          ! do nothing
-        end if
-      end if
-    end if
 
     ! Adjust the Nordsieck history array with new step size & new order
     call SetStepSize(this,dt_scale,this%y_NS,dt)
