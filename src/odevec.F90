@@ -50,7 +50,7 @@ module odevec_main
     double precision :: dt_min                              !> minimal timestep
     double precision, pointer, dimension(:,:) :: y          !> current solution
                                                             !> array | often y_NS(:,:,0)
-    integer         , pointer, dimension(:)   :: Piv        !> pivoting vector
+    integer         , pointer, dimension(:,:) :: Piv        !> pivoting vector
     integer         , pointer, dimension(:)   :: Perm       !> permutation vector
     double precision, pointer, dimension(:,:) :: en         !> correction vector
     double precision, pointer, dimension(:,:) :: en_old     !> old corr. vector
@@ -94,7 +94,7 @@ contains
     ! allocate fields
     allocate( &
               this%y(this%nvector,this%neq), &
-              this%Piv(this%neq), &
+              this%Piv(this%nvector,this%neq), &
               this%Perm(this%neq), &
               this%en(this%nvector,this%neq), &
               this%en_old(this%nvector,this%neq), &
@@ -648,7 +648,7 @@ contains
     type(odevec)   :: this
     double precision, dimension(this%nvector,this%neq,this%neq) :: LU
     double precision, dimension(this%nvector,this%neq)          :: res, den
-    integer         , dimension(this%neq)                       :: Piv
+    integer         , dimension(this%nvector,this%neq)          :: Piv
     integer        :: i,j,k
     intent(in)     :: LU,Piv,res
     intent(inout)    :: den
@@ -666,15 +666,15 @@ contains
 !NEC$ ivdep
         do i = 1,this%nvector
 !          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,k,j)*this%den_tmp(i,j)
-          this%den_tmp(i,Piv(k)) = this%den_tmp(i,Piv(k)) + LU(i,Piv(k),j)*this%den_tmp(i,Piv(j))
+          this%den_tmp(i,Piv(i,k)) = this%den_tmp(i,Piv(i,k)) + LU(i,Piv(i,k),j)*this%den_tmp(i,Piv(i,j))
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
 !        this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
 !        this%den_tmp(i,k) = this%den_tmp(i,k)
-        this%den_tmp(i,Piv(k)) = res(i,Piv(k)) - this%den_tmp(i,Piv(k))
-        this%den_tmp(i,Piv(k)) = this%den_tmp(i,Piv(k))
+        this%den_tmp(i,Piv(i,k)) = res(i,Piv(i,k)) - this%den_tmp(i,Piv(i,k))
+        this%den_tmp(i,Piv(i,k)) = this%den_tmp(i,Piv(i,k))
       end do
     end do
 
@@ -690,15 +690,15 @@ contains
 !NEC$ ivdep
         do i = 1,this%nvector
 !          den(i,k) = den(i,k) + LU(i,k,j)*den(i,j)
-          den(i,Piv(k)) = den(i,Piv(k)) + LU(i,Piv(k),j)*den(i,Piv(j))
+          den(i,Piv(i,k)) = den(i,Piv(i,k)) + LU(i,Piv(i,k),j)*den(i,Piv(i,j))
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
 !        den(i,k) = this%den_tmp(i,k) - den(i,k)
 !        den(i,k) = den(i,k)/LU(i,k,k)
-        den(i,Piv(k)) = this%den_tmp(i,Piv(k)) - den(i,Piv(k))
-        den(i,Piv(k)) = den(i,Piv(k))/LU(i,Piv(k),k)
+        den(i,Piv(i,k)) = this%den_tmp(i,Piv(i,k)) - den(i,Piv(i,k))
+        den(i,Piv(i,k)) = den(i,Piv(i,k))/LU(i,Piv(i,k),k)
       end do
     end do
 
@@ -757,24 +757,30 @@ contains
     type(odevec)   :: this
     integer        :: i, j, k, m, kmax
     double precision, dimension(this%nvector,this%neq,this%neq) :: A
-    integer,          dimension(this%neq) :: P
-    integer,          dimension(2) :: maxloc_ij
+    integer,          dimension(this%nvector,this%neq) :: P
+    integer,          dimension(1) :: maxloc_ij!,kmax
     intent (inout) :: A
     intent (out)   :: p
 
     ! initialize P
-    P = [(i, i=1, this%neq)]
+    do i=1,this%nvector
+      P(i,:) = [(j, j=1, this%neq)]
+    end do
     do k = 1,this%neq-1
-      maxloc_ij(:) = maxloc(abs(A(:,P(k:),k)))
-      kmax = maxloc_ij(2) + k - 1
-      if (kmax /= k ) P([k, kmax]) = P([kmax, k])
+      do i=1,this%nvector
+        maxloc_ij = maxloc(abs(A(i,P(i,k:),k)))
+        kmax = maxloc_ij(1) + k - 1
+        if (kmax /= k ) then
+          P(i,[k, kmax]) = P(i,[kmax, k])
+        end if
+      end do
     end do
 
     do k = 1,this%neq-1
       do j = k+1,this%neq
 !NEC$ ivdep
         do i = 1,this%nvector
-          A(i,P(j),k) = A(i,P(j),k) / A(i,P(k),k)
+          A(i,P(i,j),k) = A(i,P(i,j),k) / A(i,P(i,k),k)
 !          A(i,j,k) = A(i,j,k) / A(i,k,k)
         end do
       end do
@@ -782,7 +788,7 @@ contains
         do m = k+1,this%neq
 !NEC$ ivdep
           do i = 1,this%nvector
-            A(i,P(m),j) = A(i,P(m),j) - A(i,P(m),k) * A(i,P(k),j)
+            A(i,P(i,m),j) = A(i,P(i,m),j) - A(i,P(i,m),k) * A(i,P(i,k),j)
 !            A(i,m,j) = A(i,m,j) - A(i,m,k) * A(i,k,j)
           end do
         end do
