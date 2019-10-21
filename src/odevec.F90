@@ -655,6 +655,7 @@ contains
 
 !NEC$ collapse
     do j=1,this%neq
+!NEC$ ivdep
       do i=1,this%nvector
         this%den_tmp(i,j) = 0.0
       end do
@@ -664,15 +665,16 @@ contains
       do j = 1,k-1
 !NEC$ ivdep
         do i = 1,this%nvector
-          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,k,j)*this%den_tmp(i,j)
-!          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,Piv(k),j)*this%den_tmp(i,j)
+!          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,k,j)*this%den_tmp(i,j)
+          this%den_tmp(i,Piv(k)) = this%den_tmp(i,Piv(k)) + LU(i,Piv(k),j)*this%den_tmp(i,Piv(j))
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
-        this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
-        this%den_tmp(i,k) = this%den_tmp(i,k)
-!        this%den_tmp(i,k) = this%den_tmp(i,k)/LU(i,Piv(k),k)
+!        this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
+!        this%den_tmp(i,k) = this%den_tmp(i,k)
+        this%den_tmp(i,Piv(k)) = res(i,Piv(k)) - this%den_tmp(i,Piv(k))
+        this%den_tmp(i,Piv(k)) = this%den_tmp(i,Piv(k))
       end do
     end do
 
@@ -687,15 +689,16 @@ contains
       do j = k+1,this%neq
 !NEC$ ivdep
         do i = 1,this%nvector
-          den(i,k) = den(i,k) + LU(i,k,j)*den(i,j)
-!          den(i,k) = den(i,k) + LU(i,Piv(k),j)*den(i,j)
+!          den(i,k) = den(i,k) + LU(i,k,j)*den(i,j)
+          den(i,Piv(k)) = den(i,Piv(k)) + LU(i,Piv(k),j)*den(i,Piv(j))
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
-        den(i,k) = this%den_tmp(i,k) - den(i,k)
-        den(i,k) = den(i,k)/LU(i,k,k)
-!        den(i,k) = den(i,k)/LU(i,Piv(k),k)
+!        den(i,k) = this%den_tmp(i,k) - den(i,k)
+!        den(i,k) = den(i,k)/LU(i,k,k)
+        den(i,Piv(k)) = this%den_tmp(i,Piv(k)) - den(i,Piv(k))
+        den(i,Piv(k)) = den(i,Piv(k))/LU(i,Piv(k),k)
       end do
     end do
 
@@ -760,28 +763,27 @@ contains
     intent (out)   :: p
 
     ! initialize P
-!    P = [(i, i=1, this%neq)]
-!    do k = 1,this%neq-1
-!      maxloc_ij(:) = maxloc(abs(A(:,P(k:),k)))
-!      maxloc_ij(:) = maxloc(abs(A(:,P(k:),k)))
-!      kmax = maxloc_ij(2) + k - 1
-!      if (kmax /= k ) P([k, kmax]) = P([kmax, k])
-!    end do
+    P = [(i, i=1, this%neq)]
+    do k = 1,this%neq-1
+      maxloc_ij(:) = maxloc(abs(A(:,P(k:),k)))
+      kmax = maxloc_ij(2) + k - 1
+      if (kmax /= k ) P([k, kmax]) = P([kmax, k])
+    end do
 
     do k = 1,this%neq-1
       do j = k+1,this%neq
 !NEC$ ivdep
         do i = 1,this%nvector
-!          A(i,P(j),k) = A(i,P(j),k) / A(i,P(k),k)
-          A(i,j,k) = A(i,j,k) / A(i,k,k)
+          A(i,P(j),k) = A(i,P(j),k) / A(i,P(k),k)
+!          A(i,j,k) = A(i,j,k) / A(i,k,k)
         end do
       end do
       do j = k+1,this%neq
         do m = k+1,this%neq
 !NEC$ ivdep
           do i = 1,this%nvector
-!            A(i,P(m),j) = A(i,P(m),j) - A(i,P(m),k) * A(i,P(k),j)
-            A(i,m,j) = A(i,m,j) - A(i,m,k) * A(i,k,j)
+            A(i,P(m),j) = A(i,P(m),j) - A(i,P(m),k) * A(i,P(k),j)
+!            A(i,m,j) = A(i,m,j) - A(i,m,k) * A(i,k,j)
           end do
         end do
       end do
