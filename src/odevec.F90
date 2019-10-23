@@ -346,23 +346,27 @@ contains
 
 
   !> Calculates the Jacobian numerically
+  !!
+  !! Taken from DRPEPJ in odepack.
   subroutine CalcJac_dense(this,beta,GetRHS,y,dt,jac)
     implicit none
     type(odevec)     :: this
     integer          :: j,k,i
     external         :: GetRHS
-    double precision :: beta,srur, dt
+    double precision :: beta,srur, dt,uround
     double precision, dimension(this%nvector) :: deltay, r, fac, r0
     double precision, dimension(this%nvector,this%neq) :: y,ytmp,Drhs
     double precision, dimension(this%nvector,this%neq,this%neq) :: jac
 
+    uround = 2.2204460492503131E-016
+    srur = 1.4901161193847656E-008
+
     call GetRHS(this, y, this%rhs)
     fac(:) = WeightedNorm(this, this%rhs, this%inv_weight_2)
-    r0 = 1d3*abs(dt)*1.0*this%neq*fac
+    r0 = 1d3*abs(dt)*uround*this%neq*fac
     where (r0 .EQ. 0d0)
       r0 = 1d0
     end where
-    srur = 1.0! WM(1) ! is not 1.0! Find out value
     do k = 1,this%neq
       ytmp(:,k) = y(:,k)
       r(:) = MAX(srur*abs(y(:,k)),r0(:)/this%inv_weight_2(:,k))
