@@ -353,8 +353,8 @@ def ReplacePragmas(fh_list, fout):
                 for i in range(rhs.shape[0]):
                     if((i==neq-2) and (args.heatcool==1)):
                         fout[k].write("      rhs(:," + str(i + 1) + ") = " + krome_heatcool_string0 + "\n")
-                    elif((args.limit_H==1) and ((i==2)or(i==4))):
-                        fout[k].write("      where(y(:,3).lt.1e14)\n")
+                    elif((args.equilibrium_H==1) and ((i==2)or(i==4))):
+                        fout[k].write("      where((y(:,3)+2.*y(:,5)).lt.1e15)\n")
                         fout[k].write("      rhs(:," + str(i + 1) + ") = " +
                                       fcode(rhs[i], source_format='free', standard=95) + "\n")
                         fout[k].write("      end where\n")
@@ -597,7 +597,7 @@ if __name__ == '__main__':
             required=False,
             help='set to 1 if cooling/heating should be solved within ODE in KROMEian way')
     parser.add_argument(
-            '--limit_H',
+            '--equilibrium_H',
             default=0,
             type=int,
             required=False,
@@ -628,12 +628,12 @@ if __name__ == '__main__':
     if (args.krome_setupfile != None):
         args.example="KROME"
 
-    if ((args.limit_H==1) and args.packaging != "DENSE"):
-        sys.exit("args.limit_H is only allowed with DENSE packaging.")
-    if ((args.limit_H==1) and (args.ordering != "None")):
-        sys.exit("args.limit_H is only allowed without ordering.")
-    if ((args.limit_H==1) and args.LUmethod != 3):
-        sys.exit("args.limit_H is currently only usable with LUmethod==3.")
+    if ((args.equilibrium_H==1) and args.packaging != "DENSE"):
+        sys.exit("args.equilibrium_H is only allowed with DENSE packaging.")
+    if ((args.equilibrium_H==1) and (args.ordering != "None")):
+        sys.exit("args.equilibrium_H is only allowed without ordering.")
+    if ((args.equilibrium_H==1) and args.LUmethod != 3):
+        sys.exit("args.equilibrium_H is currently only usable with LUmethod==3.")
 
     # get right-hand-side and other
     y, rhs, nvector, neq, maxorder, nrea = \
