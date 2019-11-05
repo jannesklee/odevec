@@ -354,7 +354,7 @@ def ReplacePragmas(fh_list, fout):
                     if((i==neq-2) and (args.heatcool==1)):
                         fout[k].write("      rhs(:," + str(i + 1) + ") = " + krome_heatcool_string0 + "\n")
                     elif((args.equilibrium_H==1) and ((i==2)or(i==4))):
-                        fout[k].write("      where((y(:,3)+2.*y(:,5)).lt.1e15)\n")
+                        fout[k].write("      where((y(:,3)+2.*y(:,5)).lt.1e14)\n")
                         fout[k].write("      rhs(:," + str(i + 1) + ") = " +
                                       fcode(rhs[i], source_format='free', standard=95) + "\n")
                         fout[k].write("      end where\n")
