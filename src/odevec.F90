@@ -149,12 +149,13 @@ contains
 
 
   !> Main subroutine to be called from outside
-  subroutine SolveODE(this,time,dt,t_stop,y,GetRHS,GetJac,GetLU)
+  subroutine SolveODE(this,time,dt,t_stop,y,GetRHS,GetJac,GetLU,Mask)
     implicit none
     type(odevec) :: this
     external          :: GetRHS,GetJac,GetLU
     double precision  :: time, t_stop, dt
     double precision, dimension(this%nvector,this%neq) :: y
+    logical, intent(in), optional, dimension(this%nvector) :: Mask
     intent(in)        :: t_stop
     intent(inout)     :: y, time, dt
 
@@ -162,24 +163,33 @@ contains
 
     ! Calculate initial right hand side and step-size
     call GetRHS(this,y,this%rhs)
-    CALL CalcInitialStepSize(this,time,t_stop,y,dt)
+    if (present(Mask)) then
+      CALL CalcInitialStepSize(this,time,t_stop,y,dt,Mask)
+    else
+      CALL CalcInitialStepSize(this,time,t_stop,y,dt)
+    end if
     this%y_NS(:,:,1) = dt*this%rhs(:,:)
 
     ! main solve - solve the linear system
     do while (time < t_stop)
       ! solve the system
-      call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU)
+      if (present(Mask)) then
+        call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU,Mask)
+      else
+        call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU)
+      end if
 
       this%iterator = this%iterator + 1
     end do
-    call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y)
+    call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y,Mask)
   end subroutine
 
-  subroutine CalcInitialStepSize(this,time,t_stop,y,dt_init)
+  subroutine CalcInitialStepSize(this,time,t_stop,y,dt_init,Mask)
     implicit none
     type(odevec) :: this
     double precision :: time, t_stop, dt_init, tol, W0
     double precision, dimension(this%nvector,this%neq) :: W_inv2, y
+    logical, intent(in), optional, dimension(this%nvector) :: Mask
 
     ! needed in order to calculate the weighted norm
     call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
@@ -188,14 +198,18 @@ contains
     W_inv2 = this%inv_weight_2*tol*tol
     W0 = max(abs(time),abs(t_stop))
 
-    dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2))/this%neq))
+    if(present(Mask)) then
+      dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2),MASK=Mask)/this%neq))
+    else
+      dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2))/this%neq))
+    end if
 
     dt_init = min(dt_init,abs(t_stop-time))
   end subroutine
 
 
   !> Solves a linear system for a given timestep
-  subroutine SolveLinearSystem(this,t,dt,y,GetRHS,GetJac,GetLU)
+  subroutine SolveLinearSystem(this,t,dt,y,GetRHS,GetJac,GetLU,Mask)
     implicit none
     type(odevec) :: this
     external          :: GetRHS,GetJac,GetLU
@@ -204,6 +218,7 @@ contains
     integer          :: i,j,k
     double precision :: conv_error, conv_rate, conv_crit, error
     integer          :: conv_iterator, conv_failed, lte_iterator
+    logical, intent(in), optional, dimension(this%nvector) :: Mask
     logical          :: success, reset
     intent(inout)    :: y, dt, t
 
@@ -233,7 +248,13 @@ contains
 
       ! predictor step - set predicted y_NS, en=0.0
       call PredictSolution(this,this%y_NS,this%en)
-      y(:,:) = this%y_NS(:,:,0)
+      if (present(Mask)) then
+        where (transpose(spread(Mask,1,this%neq)))
+          y(:,:) = this%y_NS(:,:,0)
+        end where
+      else
+        y(:,:) = this%y_NS(:,:,0)
+      end if
 
       if (this%UpdateJac) then
         if (this%LUmethod.eq.1) then
@@ -242,7 +263,7 @@ contains
         else if (this%LUmethod.eq.2) then
           call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
         else if (this%LUmethod.eq.3) then
-          call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU)
+          call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU,Mask)
           call LUDecompose(this,this%LU,this%Piv)
         end if
         this%UpdateJac = .false.
@@ -273,13 +294,19 @@ contains
 
         ! add correction to solution vector
         this%en(:,:) = this%en(:,:) + this%den(:,:)
-        y(:,:) = this%y_NS(:,:,0) + this%coeff(this%order,0)*this%en
+        if (present(Mask)) then
+          where (transpose(spread(Mask,1,this%neq)))
+            y(:,:) = this%y_NS(:,:,0) + this%coeff(this%order,0)*this%en
+          end where
+        else
+          y(:,:) = this%y_NS(:,:,0) + this%coeff(this%order,0)*this%en
+        end if
 
         ! convergence test:
         ! if fail reset and run again starting at predictor step with 0.25
         ! times the step-size
         call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
-                              conv_error,this%inv_weight_2,reset,conv_crit)
+                              conv_error,this%inv_weight_2,reset,conv_crit,Mask)
 
         if (this%check_negatives) then
           if(ANY(y.lt.-TINY(y))) reset=.true.
@@ -308,7 +335,7 @@ contains
       ! local truncation error test:
       ! checks if solution is good enough and, similar to the convergence
       ! test, rerun from predictor with adjusted step size
-      error = WeightedNorm(this,this%en,this%inv_weight_2)/ &
+      error = WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
               tau(this%order,this%order,this%coeff)
       call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
       if (error > 1d0) then
@@ -338,7 +365,7 @@ contains
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for order+(0,-1,+1) -> use largest for next step
     if (this%update_dtorder.or.(this%dtorder_count.eq.this%order + 1)) then
-      call CalcStepSizeOrder(this,dt_scale,this%order,dt)
+      call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
     end if
 
     this%en_old = this%en
@@ -348,7 +375,7 @@ contains
   !> Calculates the Jacobian numerically
   !!
   !! Taken from DRPEPJ in odepack.
-  subroutine CalcJac_dense(this,beta,GetRHS,y,dt,jac)
+  subroutine CalcJac_dense(this,beta,GetRHS,y,dt,jac,Mask)
     implicit none
     type(odevec)     :: this
     integer          :: j,k,i
@@ -357,12 +384,17 @@ contains
     double precision, dimension(this%nvector) :: deltay, r, fac, r0
     double precision, dimension(this%nvector,this%neq) :: y,ytmp,Drhs
     double precision, dimension(this%nvector,this%neq,this%neq) :: jac
+    logical, intent(in), optional, dimension(this%nvector) :: Mask
 
     uround = 2.2204460492503131E-016
     srur = 1.4901161193847656E-008
 
     call GetRHS(this, y, this%rhs)
-    fac(:) = WeightedNorm(this, this%rhs, this%inv_weight_2)
+    if (present(Mask)) then
+      fac(:) = WeightedNorm(this, this%rhs, this%inv_weight_2, Mask)
+    else
+      fac(:) = WeightedNorm(this, this%rhs, this%inv_weight_2)
+    end if
     r0 = 1d3*abs(dt)*uround*this%neq*fac
     where (r0 .EQ. 0d0)
       r0 = 1d0
@@ -427,11 +459,12 @@ contains
   end subroutine
 
   !> Calculates the step-sizes and uses according orders
-  subroutine CalcStepSizeOrder(this,dt_scale,order,dt)
+  subroutine CalcStepSizeOrder(this,dt_scale,order,dt,Mask)
     implicit none
     type(odevec)     :: this
     integer          :: dt_maxloc, order
     double precision :: dt_scale, dt_scale_same, dt_scale_up, dt_scale_down, dt_upper_limit, dt
+    logical, intent(in), optional, dimension(this%nvector) :: Mask
     intent(out)      :: dt_scale
     intent(inout)    :: order,this,dt
 
@@ -440,18 +473,33 @@ contains
     if (order.eq.1) then
       dt_scale_down = 0.0
     else
-    dt_scale_down = 1.d0/(1.3*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order)/ &
-                          tau(order,order-1,this%coeff))**(1d0/order) + 1d-6)
+    if (present(Mask)) then
+      dt_scale_down = 1.d0/(1.3*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order,Mask)/ &
+                            tau(order,order-1,this%coeff))**(1d0/order) + 1d-6)
+    else
+      dt_scale_down = 1.d0/(1.3*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order)/ &
+                            tau(order,order-1,this%coeff))**(1d0/order) + 1d-6)
+    end if
     end if
     ! for same order
-    dt_scale_same = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
-                          tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
+    if (present(Mask)) then
+      dt_scale_same = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
+                            tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
+    else
+      dt_scale_same = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
+                            tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
+    end if
     ! for higher order
     if (order.eq.this%maxorder) then
       dt_scale_up = 0d0
     else
+    if (present(Mask)) then
+      dt_scale_up   = 1.0d0/(1.4*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2,Mask)/ &
+                            tau(order,order+1,this%coeff))**(1d0/(order+2d0)) + 1d-6)
+    else
       dt_scale_up   = 1.0d0/(1.4*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2)/ &
                             tau(order,order+1,this%coeff))**(1d0/(order+2d0)) + 1d-6)
+    end if
     end if
 
     ! choose largest and search for location of largest
@@ -499,17 +547,22 @@ contains
 
 
   !> Calculates the error for convergence
-  subroutine CheckConvergence(this,iterator,conv_rate,den,conv_error,inv_weight_2,reset,conv_crit)
+  subroutine CheckConvergence(this,iterator,conv_rate,den,conv_error,inv_weight_2,reset,conv_crit,Mask)
     implicit none
     type(odevec)     :: this
     integer          :: iterator
     logical          :: reset
     double precision :: conv_rate, conv_rate2, conv_error_tmp, conv_error, conv_crit
     double precision, dimension(this%nvector,this%neq) :: den, inv_weight_2
+    logical, intent(in), optional, dimension(this%nvector) :: Mask
     intent(in)       :: den, inv_weight_2
     intent(inout)    :: conv_rate, conv_error, reset, iterator, conv_crit
 
-    conv_error_tmp = WeightedNorm(this,den,inv_weight_2)
+    if (present(Mask)) then
+      conv_error_tmp = WeightedNorm(this,den,inv_weight_2,Mask)
+    else
+      conv_error_tmp = WeightedNorm(this,den,inv_weight_2)
+    end if
     if (iterator.ne.0) then
       conv_rate2 = conv_error_tmp/conv_error
       conv_rate = max(0.2d0*conv_rate,conv_rate2)
@@ -532,27 +585,39 @@ contains
 
 
   !> Calculates the weighted norm (two different interfaces for performance)
-  function WeightedNorm1(this,en,inv_weight_2)
+  function WeightedNorm1(this,en,inv_weight_2,Mask)
     implicit none
     type(odevec)     :: this
     double precision :: WeightedNorm1
     double precision, dimension(this%nvector,this%neq) :: en, inv_weight_2
-    intent(in)       :: en,inv_weight_2,this
+    logical, optional, dimension(this%nvector) :: Mask
+    intent(in)       :: en,inv_weight_2,this,Mask
 
+    if (present(Mask)) then
+    WeightedNorm1 = maxval(sqrt(sum(en(:,:)*en(:,:)*inv_weight_2(:,:),DIM=2)/ &
+                         (this%neq)),MASK=Mask)
+    else
     WeightedNorm1 = maxval(sqrt(sum(en(:,:)*en(:,:)*inv_weight_2(:,:),DIM=2)/ &
                          (this%neq)))
+    end if
   end function WeightedNorm1
-  pure function WeightedNorm2(this,en,inv_weight_2,column)
+  pure function WeightedNorm2(this,en,inv_weight_2,column,Mask)
     implicit none
     type(odevec)     :: this
     integer          :: column
     double precision :: WeightedNorm2
     double precision, dimension(this%nvector,this%neq,0:this%maxorder+1) :: en
     double precision, dimension(this%nvector,this%neq) :: inv_weight_2
-    intent(in)       :: en,inv_weight_2,column,this
+    logical, optional, dimension(this%nvector) :: Mask
+    intent(in)       :: en,inv_weight_2,column,this, Mask
 
+    if (present(Mask)) then
+    WeightedNorm2 = maxval(sqrt(sum(en(:,:,column)*en(:,:,column)*inv_weight_2(:,:),DIM=2)/ &
+                         (this%neq)),MASK=Mask)
+    else
     WeightedNorm2 = maxval(sqrt(sum(en(:,:,column)*en(:,:,column)*inv_weight_2(:,:),DIM=2)/ &
                          (this%neq)))
+    end if
   end function WeightedNorm2
 
 
@@ -878,15 +943,22 @@ contains
   !! If an output is requested because \$ t > t_{\mathrm{out}} \$ the solution
   !! is interpolated at the chosen output position. The interpolation is done
   !! by Taylor series expansion, where Horner's rule is applied for efficiency.
-  subroutine InterpolateSolution(this,t,dt,t_out,order,y_NS,y)
+  subroutine InterpolateSolution(this,t,dt,t_out,order,y_NS,y,Mask)
     implicit none
     type(odevec)    :: this
     double precision, dimension(this%nvector,this%neq,0:this%maxorder+1) :: y_NS
-    double precision, dimension(this%nvector,this%neq) :: y
+    double precision, dimension(this%nvector,this%neq) :: y, y_help
+    logical, optional, dimension(this%nvector) :: Mask
     double precision  :: t, t_out, rel_t, dt
     integer           :: k, k_dot, order
     intent(in)        :: dt, t_out, order, y_NS
     intent(inout)     :: t, y
+
+    if (present(Mask)) then
+      where (.not.transpose(spread(Mask,1,this%neq)))
+        y_help(:,:) = y(:,:)
+      end where
+    end if
 
     ! Horner's rule
     y(:,:) = y_NS(:,:,order)
@@ -895,6 +967,13 @@ contains
       k_dot = order - k
       y(:,:) = y_NS(:,:,k_dot) + rel_t*y(:,:)
     end do
+
+    if (present(Mask)) then
+      where (.not.transpose(spread(Mask,1,this%neq)))
+        y(:,:) = y_help(:,:)
+      end where
+    end if
+
     t = t_out
   end subroutine
 
