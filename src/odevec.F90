@@ -198,8 +198,13 @@ contains
     W_inv2 = this%inv_weight_2*tol*tol
     W0 = max(abs(time),abs(t_stop))
 
+
     if(present(Mask)) then
-      dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2),MASK=Mask)/this%neq))
+      if (any(Mask)) then
+        dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2),MASK=Mask)/this%neq))
+      else
+        dt_init = HUGE(dt_init)
+      end if
     else
       dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2))/this%neq))
     end if
