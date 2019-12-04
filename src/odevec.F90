@@ -137,14 +137,6 @@ contains
     ! sparsity patterns
 #ODEVEC_SET_LU_SPARSITY
 
-    ! some initializations
-    this%FirstStep   = .true.
-    this%order       = 1
-    this%iterator    = 0
-    this%dtorder_count = 0
-    this%update_dtorder = .true.
-    this%UpdateJac_count = 0
-
   end subroutine
 
 
@@ -159,29 +151,46 @@ contains
     intent(in)        :: t_stop
     intent(inout)     :: y, time, dt
 
-    this%y_NS(:,:,0) = y(:,:)
+    ! some initializations
+    this%FirstStep   = .true.
+    this%order       = 1
+    this%iterator    = 0
+    this%dtorder_count = 0
+    this%update_dtorder = .true.
+    this%UpdateJac_count = 0
 
-    ! Calculate initial right hand side and step-size
-    call GetRHS(this,y,this%rhs)
-    if (present(Mask)) then
-      CALL CalcInitialStepSize(this,time,t_stop,y,dt,Mask)
+    if (.not.any(Mask)) then
+      ! do nothing
+      time = t_stop
     else
-      CALL CalcInitialStepSize(this,time,t_stop,y,dt)
-    end if
-    this%y_NS(:,:,1) = dt*this%rhs(:,:)
+      this%y_NS(:,:,0) = y(:,:)
 
-    ! main solve - solve the linear system
-    do while (time < t_stop)
-      ! solve the system
+      ! Calculate initial right hand side and step-size
+      call GetRHS(this,y,this%rhs)
       if (present(Mask)) then
-        call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU,Mask)
+        CALL CalcInitialStepSize(this,time,t_stop,y,dt,Mask)
       else
-        call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU)
+        CALL CalcInitialStepSize(this,time,t_stop,y,dt)
       end if
+      this%y_NS(:,:,1) = dt*this%rhs(:,:)
 
-      this%iterator = this%iterator + 1
-    end do
-    call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y,Mask)
+      ! main solve - solve the linear system
+      do while (time < t_stop)
+        ! solve the system
+        if (present(Mask)) then
+          call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU,Mask)
+        else
+          call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU)
+        end if
+
+        this%iterator = this%iterator + 1
+      end do
+      if (present(Mask)) then
+        call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y,Mask)
+      else
+        call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y)
+      end if
+    end if
   end subroutine
 
   subroutine CalcInitialStepSize(this,time,t_stop,y,dt_init,Mask)
@@ -254,7 +263,7 @@ contains
       ! predictor step - set predicted y_NS, en=0.0
       call PredictSolution(this,this%y_NS,this%en)
       if (present(Mask)) then
-        where (transpose(spread(Mask,1,this%neq)))
+        where (spread(Mask,2,this%neq))
           y(:,:) = this%y_NS(:,:,0)
         end where
       else
@@ -268,7 +277,11 @@ contains
         else if (this%LUmethod.eq.2) then
           call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
         else if (this%LUmethod.eq.3) then
-          call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU,Mask)
+          if (present(Mask)) then
+            call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU,Mask)
+          else
+            call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU)
+          end if
           call LUDecompose(this,this%LU,this%Piv)
         end if
         this%UpdateJac = .false.
@@ -300,7 +313,7 @@ contains
         ! add correction to solution vector
         this%en(:,:) = this%en(:,:) + this%den(:,:)
         if (present(Mask)) then
-          where (transpose(spread(Mask,1,this%neq)))
+          where (spread(Mask,2,this%neq))
             y(:,:) = this%y_NS(:,:,0) + this%coeff(this%order,0)*this%en
           end where
         else
@@ -310,8 +323,13 @@ contains
         ! convergence test:
         ! if fail reset and run again starting at predictor step with 0.25
         ! times the step-size
-        call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
-                              conv_error,this%inv_weight_2,reset,conv_crit,Mask)
+        if (present(Mask)) then
+          call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
+                                conv_error,this%inv_weight_2,reset,conv_crit,Mask)
+        else
+          call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
+                                conv_error,this%inv_weight_2,reset,conv_crit)
+        end if
 
         if (this%check_negatives) then
           if(ANY(y.lt.-TINY(y))) reset=.true.
@@ -340,8 +358,13 @@ contains
       ! local truncation error test:
       ! checks if solution is good enough and, similar to the convergence
       ! test, rerun from predictor with adjusted step size
-      error = WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
-              tau(this%order,this%order,this%coeff)
+      if (present(Mask)) then
+        error = WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
+                tau(this%order,this%order,this%coeff)
+      else
+        error = WeightedNorm(this,this%en,this%inv_weight_2)/ &
+                tau(this%order,this%order,this%coeff)
+      end if
       call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
       if (error > 1d0) then
         dt_scale = 0.2
@@ -370,7 +393,11 @@ contains
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for order+(0,-1,+1) -> use largest for next step
     if (this%update_dtorder.or.(this%dtorder_count.eq.this%order + 1)) then
-      call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
+      if (present(Mask)) then
+        call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
+      else
+        call CalcStepSizeOrder(this,dt_scale,this%order,dt)
+      end if
     end if
 
     this%en_old = this%en
@@ -510,6 +537,10 @@ contains
     ! choose largest and search for location of largest
     dt_maxloc = maxloc((/ dt_scale_down, dt_scale_same, dt_scale_up /),DIM=1)
     dt_scale = maxval((/ dt_scale_down, dt_scale_same, dt_scale_up /))
+    if(.not.any(Mask))then
+      dt_scale = HUGE(dt_scale)
+      dt_maxloc = 2
+    end if
 
     ! set new order
     if (dt_scale.ge.1.1) then
@@ -960,7 +991,7 @@ contains
     intent(inout)     :: t, y
 
     if (present(Mask)) then
-      where (.not.transpose(spread(Mask,1,this%neq)))
+      where (.not.spread(Mask,2,this%neq))
         y_help(:,:) = y(:,:)
       end where
     end if
@@ -974,7 +1005,7 @@ contains
     end do
 
     if (present(Mask)) then
-      where (.not.transpose(spread(Mask,1,this%neq)))
+      where (.not.spread(Mask,2,this%neq))
         y(:,:) = y_help(:,:)
       end where
     end if
