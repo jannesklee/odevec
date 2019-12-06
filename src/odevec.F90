@@ -148,6 +148,7 @@ contains
     double precision  :: time, t_stop, dt
     double precision, dimension(this%nvector,this%neq) :: y
     logical, intent(in), optional, dimension(this%nvector) :: Mask
+    logical :: start_solver
     intent(in)        :: t_stop
     intent(inout)     :: y, time, dt
 
@@ -158,11 +159,18 @@ contains
     this%dtorder_count = 0
     this%update_dtorder = .true.
     this%UpdateJac_count = 0
+    start_solver = .true.
 
-    if (.not.any(Mask)) then
-      ! do nothing
-      time = t_stop
-    else
+    if (present(Mask)) then
+      if (.not.any(Mask)) then
+        ! do nothing
+        time = t_stop
+        start_solver = .false.
+      else
+        start_solver = .true.
+      end if
+   end if
+   if(start_solver) then
       this%y_NS(:,:,0) = y(:,:)
 
       ! Calculate initial right hand side and step-size
