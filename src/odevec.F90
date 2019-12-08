@@ -991,7 +991,13 @@ contains
     intent(inout)     :: t, y
 
     ! Horner's rule
-    y(:,:) = y_NS(:,:,order)
+    if (present(Mask)) then
+      where (spread(Mask,2,this%neq))
+        y(:,:) = y_NS(:,:,order)
+      end where
+    else
+      y(:,:) = y_NS(:,:,order)
+    end if
     rel_t = (t_out - t)/(dt)
     do k = 1,order
       k_dot = order - k
