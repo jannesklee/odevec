@@ -995,7 +995,7 @@ contains
     rel_t = (t_out - t)/(dt)
     do k = 1,order
       k_dot = order - k
-      if (present(Mask)
+      if (present(Mask)) then
         where (spread(Mask,2,this%neq))
           y(:,:) = y_NS(:,:,k_dot) + rel_t*y(:,:)
         end where
