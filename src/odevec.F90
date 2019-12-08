@@ -217,11 +217,7 @@ contains
 
 
     if(present(Mask)) then
-      if (any(Mask)) then
-        dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2),MASK=Mask)/this%neq))
-      else
-        dt_init = HUGE(dt_init)
-      end if
+      dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2),MASK=Mask)/this%neq))
     else
       dt_init = sqrt(tol/(W0**(-2.0) + maxval(sum(this%rhs(:,:)**2.0*W_inv2(:,:),DIM=2))/this%neq))
     end if
@@ -545,10 +541,6 @@ contains
     ! choose largest and search for location of largest
     dt_maxloc = maxloc((/ dt_scale_down, dt_scale_same, dt_scale_up /),DIM=1)
     dt_scale = maxval((/ dt_scale_down, dt_scale_same, dt_scale_up /))
-    if(.not.any(Mask))then
-      dt_scale = HUGE(dt_scale)
-      dt_maxloc = 2
-    end if
 
     ! set new order
     if (dt_scale.ge.1.1) then
@@ -991,32 +983,26 @@ contains
     implicit none
     type(odevec)    :: this
     double precision, dimension(this%nvector,this%neq,0:this%maxorder+1) :: y_NS
-    double precision, dimension(this%nvector,this%neq) :: y, y_help
+    double precision, dimension(this%nvector,this%neq) :: y
     logical, optional, dimension(this%nvector) :: Mask
     double precision  :: t, t_out, rel_t, dt
     integer           :: k, k_dot, order
     intent(in)        :: dt, t_out, order, y_NS
     intent(inout)     :: t, y
 
-    if (present(Mask)) then
-      where (.not.spread(Mask,2,this%neq))
-        y_help(:,:) = y(:,:)
-      end where
-    end if
-
     ! Horner's rule
     y(:,:) = y_NS(:,:,order)
     rel_t = (t_out - t)/(dt)
     do k = 1,order
       k_dot = order - k
-      y(:,:) = y_NS(:,:,k_dot) + rel_t*y(:,:)
+      if (present(Mask)
+        where (spread(Mask,2,this%neq))
+          y(:,:) = y_NS(:,:,k_dot) + rel_t*y(:,:)
+        end where
+      else
+        y(:,:) = y_NS(:,:,k_dot) + rel_t*y(:,:)
+      end if
     end do
-
-    if (present(Mask)) then
-      where (.not.spread(Mask,2,this%neq))
-        y(:,:) = y_help(:,:)
-      end where
-    end if
 
     t = t_out
   end subroutine
