@@ -338,6 +338,7 @@ contains
         if (this%check_negatives) then
           if(ANY(y.lt.-TINY(y))) reset=.true.
         end if
+        if(any(y(:,:)/=y(:,:))) reset=.true.
 
         if (reset) then
           dt_scale = 0.25
@@ -548,20 +549,24 @@ contains
         if (order /= 1) then
           order = order - 1
         else
-          dt_scale = dt_scale_same
+          print *, "Error in CalcStepSizeOrder: order and step-size not fitting together"
+          stop
         end if
       else if (dt_maxloc == 2) then
         dt_scale = dt_scale_same
-        ! do nothing
+        order = order
       else if (dt_maxloc == 3) then
         if (order /= this%maxorder) then
           this%y_NS(:,:,order+1) = this%coeff(order,order)*this%en(:,:)/(order+1d0)
           order = order + 1
         else
-          dt_scale = dt_scale_same
+          print *, "Error in CalcStepSizeOrder: order and step-size not fitting together"
+          stop
         end if
       end if
-        dt_scale = dt_scale_same
+    else
+      dt_scale = dt_scale_same
+      order = order
     end if
 
     ! maximum increasement in step-size
