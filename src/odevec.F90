@@ -381,8 +381,6 @@ contains
     if (this%update_dtorder.or.(this%dtorder_count.eq.this%order + 1)) then
       call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
 
-      this%JacobianChange = this%JacobianChange*this%coeff(this%order,0)/this%OldCoefficient
-      this%OldCoefficient = this%coeff(this%order,0)
     end if
 
     if (this%UpdateJac_count.ge.20) then
@@ -545,6 +543,8 @@ contains
     end if
     dt_scale = min(dt_upper_limit,dt_scale)
 
+    this%JacobianChange = this%JacobianChange*dt_scale
+
 
     ! Adjust the Nordsieck history array with new step size & new order
     call SetStepSize(this,dt_scale,this%y_NS,dt)
@@ -652,8 +652,8 @@ contains
     integer          :: i,j,k
     double precision :: dt_scale,dtt_scale,dt
     double precision, dimension(this%nvector,this%neq,0:this%maxorder+1) :: y_NS
-    intent(in)       :: dt_scale,this
-    intent(inout)    :: y_NS,dt
+    intent(in)       :: dt_scale
+    intent(inout)    :: y_NS,dt,this
 
     dtt_scale = 1.0
     do k = 1,this%order
@@ -668,6 +668,7 @@ contains
     end do
 
     dt = dt*dt_scale
+    this%JacobianChange = this%JacobianChange*dt_scale
   end subroutine SetStepSize
 
 
