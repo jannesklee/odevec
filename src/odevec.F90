@@ -49,6 +49,9 @@ module odevec_main
     double precision :: atol                                !> absolute tolerance
     double precision :: dt_min                              !> minimal timestep
     double precision :: ConvergenceRate                     !> rate of convergence
+    double precision :: JacobianChange                      !> change of Jacobian
+    double precision :: OldCoefficient                      !> saves old coefficient
+                                                            !> to determine JacobianChange
     double precision, pointer, dimension(:,:) :: y          !> current solution
                                                             !> array | often y_NS(:,:,0)
     integer         , pointer, dimension(:,:) :: Piv        !> pivoting vector
@@ -162,6 +165,8 @@ contains
     this%UpdateJac_count = 0
     start_solver = .true.
     this%ConvergenceRate = 0.7d0
+    this%JacobianChange = 0.0
+    this%OldCoefficient = 1.0
 
     if (present(Mask)) then
       if (.not.any(Mask)) then
@@ -275,7 +280,8 @@ contains
         end if
         this%UpdateJac = .false.
         this%UpdateJac_count = 0
-        this%ConvergenceRate     = 0.7d0
+        this%ConvergenceRate = 0.7d0
+        this%JacobianChange = 1.0
       end if
 
       ! 3. corrector ----------------------------------------------------------!
@@ -369,15 +375,20 @@ contains
     ! after a successfull run rewrite the history array
     call UpdateNordsieck(this,this%en,this%y_NS)
 
-    if (this%UpdateJac_count.ge.20) then
-      this%UpdateJac = .true.
-    end if
-
     ! preparation for next step
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for order+(0,-1,+1) -> use largest for next step
     if (this%update_dtorder.or.(this%dtorder_count.eq.this%order + 1)) then
       call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
+
+      this%JacobianChange = this%JacobianChange*this%coeff(this%order,0)/this%OldCoefficient
+      this%OldCoefficient = this%coeff(this%order,0)
+    end if
+
+    if (this%UpdateJac_count.ge.20) then
+      this%UpdateJac = .true.
+    else if (abs(this%JacobianChange - 1.0) .gt. 0.3) then
+      this%UpdateJac = .true.
     end if
 
     this%en_old = this%en
