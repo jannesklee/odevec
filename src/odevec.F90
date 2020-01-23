@@ -283,8 +283,9 @@ contains
       CorrectorIterations = 0
       corrector: do while (.not.Converged)
 
-        ! calculates residuum
-        call CalcResiduum(this,GetRHS,y,dt,this%res)
+        call GetRHS(this,y,this%rhs)
+
+        call CalcResiduum(this,dt,this%rhs,this%y_NS,this%en,this%res)
 
         ! calculates the solution for dy with given residuum
         do i=1,this%neq
@@ -914,22 +915,19 @@ contains
 
 
   !> Calculates the residuum
-  subroutine CalcResiduum(this,GetRHS,y,dt,res)
+  subroutine CalcResiduum(this,dt,rhs,y_NS,en,res)
     implicit none
     type(odevec)      :: this
-    external          :: GetRHS
     integer           :: i,j
-    double precision  :: dt
-    double precision, dimension(this%nvector,this%neq) :: y, res
-    intent (in)       :: y, dt
-    intent (out)      :: res
-
-    call GetRHS(this,y,this%rhs)
+    double precision, intent(in) :: dt
+    double precision, dimension(this%nvector,this%neq), intent(in) :: rhs, en
+    double precision, dimension(this%nvector,this%neq,0:6), intent(in) :: y_NS
+    double precision, dimension(this%nvector,this%neq), intent(out) :: res
 
 !NEC$ collapse
     do j=1,this%neq
       do i=1,this%nvector
-        res(i,j) = dt*this%rhs(i,j) - this%y_NS(i,j,1) - this%en(i,j)
+        res(i,j) = dt*rhs(i,j) - (y_NS(i,j,1) + en(i,j))
       end do
     end do
   end subroutine CalcResiduum
