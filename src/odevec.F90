@@ -48,6 +48,7 @@ module odevec_main
     double precision :: rtol                                !> relative tolerance
     double precision :: atol                                !> absolute tolerance
     double precision :: dt_min                              !> minimal timestep
+    double precision :: ConvergenceRate                     !> rate of convergence
     double precision, pointer, dimension(:,:) :: y          !> current solution
                                                             !> array | often y_NS(:,:,0)
     integer         , pointer, dimension(:,:) :: Piv        !> pivoting vector
@@ -160,6 +161,7 @@ contains
     this%update_dtorder = .true.
     this%UpdateJac_count = 0
     start_solver = .true.
+    this%ConvergenceRate = 0.7d0
 
     if (present(Mask)) then
       if (.not.any(Mask)) then
@@ -170,34 +172,25 @@ contains
         start_solver = .true.
       end if
    end if
+
    if(start_solver) then
       this%y_NS(:,:,0) = y(:,:)
 
       ! Calculate initial right hand side and step-size
       call GetRHS(this,y,this%rhs)
-      if (present(Mask)) then
-        CALL CalcInitialStepSize(this,time,t_stop,y,dt,Mask)
-      else
-        CALL CalcInitialStepSize(this,time,t_stop,y,dt)
-      end if
+      call CalcInitialStepSize(this,time,t_stop,y,dt,Mask)
       this%y_NS(:,:,1) = dt*this%rhs(:,:)
 
       ! main solve - solve the linear system
       do while (time < t_stop)
         ! solve the system
-        if (present(Mask)) then
-          call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU,Mask)
-        else
-          call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU)
-        end if
+        call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU,Mask)
+        print *, time, y
 
         this%iterator = this%iterator + 1
       end do
-      if (present(Mask)) then
-        call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y,Mask)
-      else
-        call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y)
-      end if
+
+      call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y,Mask)
     end if
   end subroutine
 
@@ -234,17 +227,16 @@ contains
     double precision, dimension(this%nvector,this%neq) :: y
     double precision :: dt, t, dt_scale, told
     integer          :: i,j,k
-    double precision :: conv_error, conv_rate, ConvergenceCriterion, error
+    double precision :: error
     integer          :: CorrectorIterations, conv_failed, lte_iterator
     logical, intent(in), optional, dimension(this%nvector) :: Mask
-    logical          :: success, ConvergenceFailed
+    logical          :: success, ConvergenceFailed, Converged
     intent(inout)    :: y, dt, t
 
     ! 1. initialization -------------------------------------------------------!
     ! use the LU matrices from the predictor value
     ! some initializations
     this%den      = 0.0d0
-    conv_rate     = 0.7d0
     lte_iterator  = 0
     conv_failed   = 0
     this%UpdateJac = .true.
@@ -258,9 +250,6 @@ contains
     ! 2. predictor ------------------------------------------------------------!
     success = .false.
     predictor: do while(.not. success)
-      ConvergenceFailed = .false.
-      CorrectorIterations = 0
-
       t = t + dt
 
       ! predictor step - set predicted y_NS, en=0.0
@@ -280,21 +269,19 @@ contains
         else if (this%LUmethod.eq.2) then
           call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
         else if (this%LUmethod.eq.3) then
-          if (present(Mask)) then
-            call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU,Mask)
-          else
-            call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU)
-          end if
+          call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU,Mask)
           call LUDecompose(this,this%LU,this%Piv)
         end if
         this%UpdateJac = .false.
         this%UpdateJac_count = 0
-        conv_rate     = 0.7d0
+        this%ConvergenceRate     = 0.7d0
       end if
 
       ! 3. corrector ----------------------------------------------------------!
-      corrector: do while (ConvergenceCriterion.gt.1.0 .or. CorrectorIterations.eq.0)
-
+      ConvergenceFailed = .false.
+      Converged = .false.
+      CorrectorIterations = 0
+      corrector: do while (.not.Converged)
 
         ! calculates residuum
         call CalcResiduum(this,GetRHS,y,dt,this%res)
@@ -326,20 +313,16 @@ contains
         ! convergence test:
         ! if fail reset and run again starting at predictor step with 0.25
         ! times the step-size
-        if (present(Mask)) then
-          call CheckConvergence(this,CorrectorIterations,conv_rate,this%den, &
-                                conv_error,this%inv_weight_2,ConvergenceFailed,ConvergenceCriterion,Mask)
-        else
-          call CheckConvergence(this,CorrectorIterations,conv_rate,this%den, &
-                                conv_error,this%inv_weight_2,ConvergenceFailed,ConvergenceCriterion)
-        end if
+        call CheckConvergence(this,this%den,this%inv_weight_2, &
+                              CorrectorIterations,this%ConvergenceRate, &
+                              ConvergenceFailed,Converged,Mask)
 
         if (this%check_negatives) then
           if(ANY(y.lt.-TINY(y))) ConvergenceFailed=.true.
         end if
         if(any(y(:,:)/=y(:,:))) ConvergenceFailed=.true.
 
-        if (ConvergenceFailed) then
+        if (ConvergenceFailed.and..not.Converged) then
           dt_scale = 0.25
           t = told
           conv_failed = conv_failed + 1
@@ -362,13 +345,8 @@ contains
       ! local truncation error test:
       ! checks if solution is good enough and, similar to the convergence
       ! test, rerun from predictor with adjusted step size
-      if (present(Mask)) then
-        error = WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
-                tau(this%order,this%order,this%coeff)
-      else
-        error = WeightedNorm(this,this%en,this%inv_weight_2)/ &
-                tau(this%order,this%order,this%coeff)
-      end if
+      error = WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
+              tau(this%order,this%order,this%coeff)
       call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
       if (error > 1d0) then
         dt_scale = 0.2
@@ -397,11 +375,7 @@ contains
     ! 4. step-size/order control ----------------------------------------------!
     ! calc. step size for order+(0,-1,+1) -> use largest for next step
     if (this%update_dtorder.or.(this%dtorder_count.eq.this%order + 1)) then
-      if (present(Mask)) then
-        call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
-      else
-        call CalcStepSizeOrder(this,dt_scale,this%order,dt)
-      end if
+      call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
     end if
 
     this%en_old = this%en
@@ -426,11 +400,7 @@ contains
     srur = 1.4901161193847656E-008
 
     call GetRHS(this, y, this%rhs)
-    if (present(Mask)) then
-      fac(:) = WeightedNorm(this, this%rhs, this%inv_weight_2, Mask)
-    else
-      fac(:) = WeightedNorm(this, this%rhs, this%inv_weight_2)
-    end if
+    fac(:) = WeightedNorm(this, this%rhs, this%inv_weight_2, Mask)
     r0 = 1d3*abs(dt)*uround*this%neq*fac
     where (r0 .EQ. 0d0)
       r0 = 1d0
@@ -509,33 +479,18 @@ contains
     if (order.eq.1) then
       dt_scale_down = 0.0
     else
-    if (present(Mask)) then
       dt_scale_down = 1.d0/(1.3*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order,Mask)/ &
                             tau(order,order-1,this%coeff))**(1d0/order) + 1d-6)
-    else
-      dt_scale_down = 1.d0/(1.3*(WeightedNorm(this,this%y_NS,this%inv_weight_2,order)/ &
-                            tau(order,order-1,this%coeff))**(1d0/order) + 1d-6)
-    end if
     end if
     ! for same order
-    if (present(Mask)) then
-      dt_scale_same = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
-                            tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
-    else
-      dt_scale_same = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2)/ &
-                            tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
-    end if
+    dt_scale_same = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
+                          tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
     ! for higher order
     if (order.eq.this%maxorder) then
       dt_scale_up = 0d0
     else
-    if (present(Mask)) then
       dt_scale_up   = 1.0d0/(1.4*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2,Mask)/ &
                             tau(order,order+1,this%coeff))**(1d0/(order+2d0)) + 1d-6)
-    else
-      dt_scale_up   = 1.0d0/(1.4*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2)/ &
-                            tau(order,order+1,this%coeff))**(1d0/(order+2d0)) + 1d-6)
-    end if
     end if
 
     ! choose largest and search for location of largest
@@ -587,40 +542,42 @@ contains
 
 
   !> Calculates the error for convergence
-  subroutine CheckConvergence(this,CorrectorIterations,conv_rate,den,conv_error,inv_weight_2,ConvergenceFailed,ConvergenceCriterion,Mask)
+  subroutine CheckConvergence(this,den,inv_weight_2,CorrectorIterations,ConvergenceRate,ConvergenceFailed,Converged,Mask)
     implicit none
     type(odevec)     :: this
     integer          :: CorrectorIterations
-    logical          :: ConvergenceFailed
-    double precision :: conv_rate, conv_rate2, conv_error_tmp, conv_error, ConvergenceCriterion
+    logical          :: ConvergenceFailed, Converged
+    double precision :: ConvergenceRate, ConvergenceRate_tmp, ConvergenceCriterion, ConvergenceError_tmp
+    double precision, save :: ConvergenceError
     double precision, dimension(this%nvector,this%neq) :: den, inv_weight_2
     logical, intent(in), optional, dimension(this%nvector) :: Mask
     intent(in)       :: den, inv_weight_2
-    intent(inout)    :: conv_rate, conv_error, ConvergenceFailed, CorrectorIterations, ConvergenceCriterion
+    intent(inout)    :: ConvergenceRate, ConvergenceFailed, CorrectorIterations, Converged
 
-    if (present(Mask)) then
-      conv_error_tmp = WeightedNorm(this,den,inv_weight_2,Mask)
-    else
-      conv_error_tmp = WeightedNorm(this,den,inv_weight_2)
-    end if
+    ConvergenceError_tmp = WeightedNorm(this,den,inv_weight_2,Mask)
     if (CorrectorIterations.ne.0) then
-      conv_rate2 = conv_error_tmp/conv_error
-      conv_rate = max(0.2d0*conv_rate,conv_rate2)
+      ConvergenceRate_tmp = ConvergenceError_tmp/ConvergenceError
+      ConvergenceRate = max(0.2d0*ConvergenceRate,ConvergenceRate_tmp)
     end if
-    ConvergenceCriterion = conv_error_tmp*min(1d0,1.5d0*conv_rate)/ &
+
+    ConvergenceCriterion = ConvergenceError_tmp*min(1d0,1.5d0*ConvergenceRate)/ &
                  (tau(this%order,this%order,this%coeff)/(2d0*(this%order + 2d0)))
 
+    if (ConvergenceCriterion.lt.1.0) then
+      Converged = .true.
+      return
+    end if
 
-    if (CorrectorIterations.ge.2 .and. conv_rate.gt.2d0*conv_rate2) then
+    if (CorrectorIterations.ge.2 .and. ConvergenceRate.gt.2d0*ConvergenceRate_tmp) then
       ConvergenceFailed = .true.
     else if (CorrectorIterations.eq.3) then
       ConvergenceFailed = .true.
     else
       ConvergenceFailed = .false.
+      ConvergenceError = ConvergenceError_tmp
+      CorrectorIterations = CorrectorIterations + 1
     end if
 
-    conv_error = conv_error_tmp
-    CorrectorIterations = CorrectorIterations + 1
   end subroutine CheckConvergence
 
 
