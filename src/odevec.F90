@@ -235,7 +235,7 @@ contains
     double precision :: dt, t, dt_scale, told
     integer          :: i,j,k
     double precision :: conv_error, conv_rate, conv_crit, error
-    integer          :: conv_iterator, conv_failed, lte_iterator
+    integer          :: CorrectorIterations, conv_failed, lte_iterator
     logical, intent(in), optional, dimension(this%nvector) :: Mask
     logical          :: success, ConvergenceFailed
     intent(inout)    :: y, dt, t
@@ -246,7 +246,6 @@ contains
     this%den      = 0.0d0
     conv_rate     = 0.7d0
     lte_iterator  = 0
-    conv_iterator = 0
     conv_failed   = 0
     this%UpdateJac = .true.
 
@@ -260,7 +259,7 @@ contains
     success = .false.
     predictor: do while(.not. success)
       ConvergenceFailed = .false.
-      conv_iterator = 0
+      CorrectorIterations = 0
 
       t = t + dt
 
@@ -294,7 +293,7 @@ contains
       end if
 
       ! 3. corrector ----------------------------------------------------------!
-      corrector: do while (conv_crit.gt.1.0 .or. conv_iterator.eq.0)
+      corrector: do while (conv_crit.gt.1.0 .or. CorrectorIterations.eq.0)
 
 
         ! calculates residuum
@@ -328,10 +327,10 @@ contains
         ! if fail reset and run again starting at predictor step with 0.25
         ! times the step-size
         if (present(Mask)) then
-          call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
+          call CheckConvergence(this,CorrectorIterations,conv_rate,this%den, &
                                 conv_error,this%inv_weight_2,ConvergenceFailed,conv_crit,Mask)
         else
-          call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
+          call CheckConvergence(this,CorrectorIterations,conv_rate,this%den, &
                                 conv_error,this%inv_weight_2,ConvergenceFailed,conv_crit)
         end if
 
@@ -348,7 +347,7 @@ contains
             print *, "ODEVEC: Convergence failed! Abortion after more than 10 iterations."
             stop
           end if
-          conv_iterator = 0
+          CorrectorIterations = 0
           call ResetSystem(this,dt_scale,dt,this%y_NS)
           if (dt .lt. this%dt_min) then
             print *, "ODEVEC: Convergence failed! Abortion, because timestep too small."
@@ -588,23 +587,23 @@ contains
 
 
   !> Calculates the error for convergence
-  subroutine CheckConvergence(this,iterator,conv_rate,den,conv_error,inv_weight_2,ConvergenceFailed,conv_crit,Mask)
+  subroutine CheckConvergence(this,CorrectorIterations,conv_rate,den,conv_error,inv_weight_2,ConvergenceFailed,conv_crit,Mask)
     implicit none
     type(odevec)     :: this
-    integer          :: iterator
+    integer          :: CorrectorIterations
     logical          :: ConvergenceFailed
     double precision :: conv_rate, conv_rate2, conv_error_tmp, conv_error, conv_crit
     double precision, dimension(this%nvector,this%neq) :: den, inv_weight_2
     logical, intent(in), optional, dimension(this%nvector) :: Mask
     intent(in)       :: den, inv_weight_2
-    intent(inout)    :: conv_rate, conv_error, ConvergenceFailed, iterator, conv_crit
+    intent(inout)    :: conv_rate, conv_error, ConvergenceFailed, CorrectorIterations, conv_crit
 
     if (present(Mask)) then
       conv_error_tmp = WeightedNorm(this,den,inv_weight_2,Mask)
     else
       conv_error_tmp = WeightedNorm(this,den,inv_weight_2)
     end if
-    if (iterator.ne.0) then
+    if (CorrectorIterations.ne.0) then
       conv_rate2 = conv_error_tmp/conv_error
       conv_rate = max(0.2d0*conv_rate,conv_rate2)
     end if
@@ -612,16 +611,16 @@ contains
                  (tau(this%order,this%order,this%coeff)/(2d0*(this%order + 2d0)))
 
 
-    if (iterator.ge.2 .and. conv_rate.gt.2d0*conv_rate2) then
+    if (CorrectorIterations.ge.2 .and. conv_rate.gt.2d0*conv_rate2) then
       ConvergenceFailed = .true.
-    else if (iterator.eq.3) then
+    else if (CorrectorIterations.eq.3) then
       ConvergenceFailed = .true.
     else
       ConvergenceFailed = .false.
     end if
 
     conv_error = conv_error_tmp
-    iterator = iterator + 1
+    CorrectorIterations = CorrectorIterations + 1
   end subroutine CheckConvergence
 
 
