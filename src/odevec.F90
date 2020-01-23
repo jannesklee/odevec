@@ -237,7 +237,7 @@ contains
     double precision :: conv_error, conv_rate, conv_crit, error
     integer          :: conv_iterator, conv_failed, lte_iterator
     logical, intent(in), optional, dimension(this%nvector) :: Mask
-    logical          :: success, reset
+    logical          :: success, ConvergenceFailed
     intent(inout)    :: y, dt, t
 
     ! 1. initialization -------------------------------------------------------!
@@ -259,7 +259,7 @@ contains
     ! 2. predictor ------------------------------------------------------------!
     success = .false.
     predictor: do while(.not. success)
-      reset = .false.
+      ConvergenceFailed = .false.
       conv_iterator = 0
 
       t = t + dt
@@ -329,18 +329,18 @@ contains
         ! times the step-size
         if (present(Mask)) then
           call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
-                                conv_error,this%inv_weight_2,reset,conv_crit,Mask)
+                                conv_error,this%inv_weight_2,ConvergenceFailed,conv_crit,Mask)
         else
           call CheckConvergence(this,conv_iterator,conv_rate,this%den, &
-                                conv_error,this%inv_weight_2,reset,conv_crit)
+                                conv_error,this%inv_weight_2,ConvergenceFailed,conv_crit)
         end if
 
         if (this%check_negatives) then
-          if(ANY(y.lt.-TINY(y))) reset=.true.
+          if(ANY(y.lt.-TINY(y))) ConvergenceFailed=.true.
         end if
-        if(any(y(:,:)/=y(:,:))) reset=.true.
+        if(any(y(:,:)/=y(:,:))) ConvergenceFailed=.true.
 
-        if (reset) then
+        if (ConvergenceFailed) then
           dt_scale = 0.25
           t = told
           conv_failed = conv_failed + 1
@@ -588,16 +588,16 @@ contains
 
 
   !> Calculates the error for convergence
-  subroutine CheckConvergence(this,iterator,conv_rate,den,conv_error,inv_weight_2,reset,conv_crit,Mask)
+  subroutine CheckConvergence(this,iterator,conv_rate,den,conv_error,inv_weight_2,ConvergenceFailed,conv_crit,Mask)
     implicit none
     type(odevec)     :: this
     integer          :: iterator
-    logical          :: reset
+    logical          :: ConvergenceFailed
     double precision :: conv_rate, conv_rate2, conv_error_tmp, conv_error, conv_crit
     double precision, dimension(this%nvector,this%neq) :: den, inv_weight_2
     logical, intent(in), optional, dimension(this%nvector) :: Mask
     intent(in)       :: den, inv_weight_2
-    intent(inout)    :: conv_rate, conv_error, reset, iterator, conv_crit
+    intent(inout)    :: conv_rate, conv_error, ConvergenceFailed, iterator, conv_crit
 
     if (present(Mask)) then
       conv_error_tmp = WeightedNorm(this,den,inv_weight_2,Mask)
@@ -613,11 +613,11 @@ contains
 
 
     if (iterator.ge.2 .and. conv_rate.gt.2d0*conv_rate2) then
-      reset = .true.
+      ConvergenceFailed = .true.
     else if (iterator.eq.3) then
-      reset = .true.
+      ConvergenceFailed = .true.
     else
-      reset = .false.
+      ConvergenceFailed = .false.
     end if
 
     conv_error = conv_error_tmp
