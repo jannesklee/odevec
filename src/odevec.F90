@@ -234,7 +234,7 @@ contains
     double precision, dimension(this%nvector,this%neq) :: y
     double precision :: dt, t, dt_scale, told
     integer          :: i,j,k
-    double precision :: conv_error, conv_rate, conv_crit, error
+    double precision :: conv_error, conv_rate, ConvergenceCriterion, error
     integer          :: CorrectorIterations, conv_failed, lte_iterator
     logical, intent(in), optional, dimension(this%nvector) :: Mask
     logical          :: success, ConvergenceFailed
@@ -293,7 +293,7 @@ contains
       end if
 
       ! 3. corrector ----------------------------------------------------------!
-      corrector: do while (conv_crit.gt.1.0 .or. CorrectorIterations.eq.0)
+      corrector: do while (ConvergenceCriterion.gt.1.0 .or. CorrectorIterations.eq.0)
 
 
         ! calculates residuum
@@ -328,10 +328,10 @@ contains
         ! times the step-size
         if (present(Mask)) then
           call CheckConvergence(this,CorrectorIterations,conv_rate,this%den, &
-                                conv_error,this%inv_weight_2,ConvergenceFailed,conv_crit,Mask)
+                                conv_error,this%inv_weight_2,ConvergenceFailed,ConvergenceCriterion,Mask)
         else
           call CheckConvergence(this,CorrectorIterations,conv_rate,this%den, &
-                                conv_error,this%inv_weight_2,ConvergenceFailed,conv_crit)
+                                conv_error,this%inv_weight_2,ConvergenceFailed,ConvergenceCriterion)
         end if
 
         if (this%check_negatives) then
@@ -587,16 +587,16 @@ contains
 
 
   !> Calculates the error for convergence
-  subroutine CheckConvergence(this,CorrectorIterations,conv_rate,den,conv_error,inv_weight_2,ConvergenceFailed,conv_crit,Mask)
+  subroutine CheckConvergence(this,CorrectorIterations,conv_rate,den,conv_error,inv_weight_2,ConvergenceFailed,ConvergenceCriterion,Mask)
     implicit none
     type(odevec)     :: this
     integer          :: CorrectorIterations
     logical          :: ConvergenceFailed
-    double precision :: conv_rate, conv_rate2, conv_error_tmp, conv_error, conv_crit
+    double precision :: conv_rate, conv_rate2, conv_error_tmp, conv_error, ConvergenceCriterion
     double precision, dimension(this%nvector,this%neq) :: den, inv_weight_2
     logical, intent(in), optional, dimension(this%nvector) :: Mask
     intent(in)       :: den, inv_weight_2
-    intent(inout)    :: conv_rate, conv_error, ConvergenceFailed, CorrectorIterations, conv_crit
+    intent(inout)    :: conv_rate, conv_error, ConvergenceFailed, CorrectorIterations, ConvergenceCriterion
 
     if (present(Mask)) then
       conv_error_tmp = WeightedNorm(this,den,inv_weight_2,Mask)
@@ -607,7 +607,7 @@ contains
       conv_rate2 = conv_error_tmp/conv_error
       conv_rate = max(0.2d0*conv_rate,conv_rate2)
     end if
-    conv_crit = conv_error_tmp*min(1d0,1.5d0*conv_rate)/ &
+    ConvergenceCriterion = conv_error_tmp*min(1d0,1.5d0*conv_rate)/ &
                  (tau(this%order,this%order,this%coeff)/(2d0*(this%order + 2d0)))
 
 
