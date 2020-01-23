@@ -178,8 +178,9 @@ contains
 
       ! Calculate initial right hand side and step-size
       call GetRHS(this,y,this%rhs)
-      call CalcInitialStepSize(this,time,t_stop,y,dt,Mask)
       this%y_NS(:,:,1) = dt*this%rhs(:,:)
+
+      call CalcInitialStepSize(this,time,t_stop,y,dt,Mask)
 
       ! main solve - solve the linear system
       do while (time < t_stop)
@@ -228,7 +229,7 @@ contains
     double precision :: dt, t, dt_scale, told
     integer          :: i,j,k
     double precision :: error
-    integer          :: CorrectorIterations, conv_failed, lte_iterator
+    integer          :: CorrectorIterations, FailedCorrections, FailedErrorTests
     logical, intent(in), optional, dimension(this%nvector) :: Mask
     logical          :: success, ConvergenceFailed, Converged
     intent(inout)    :: y, dt, t
@@ -237,8 +238,8 @@ contains
     ! use the LU matrices from the predictor value
     ! some initializations
     this%den      = 0.0d0
-    lte_iterator  = 0
-    conv_failed   = 0
+    FailedErrorTests  = 0
+    FailedCorrections   = 0
     this%UpdateJac = .true.
 
     ! needed in order to calculate the weighted norm
@@ -326,8 +327,8 @@ contains
         if (ConvergenceFailed.and..not.Converged) then
           dt_scale = 0.25
           t = told
-          conv_failed = conv_failed + 1
-          if (conv_failed .gt. 10) then
+          FailedCorrections = FailedCorrections + 1
+          if (FailedCorrections .gt. 10) then
             print *, "ODEVEC: Convergence failed! Abortion after more than 10 iterations."
             stop
           end if
@@ -341,7 +342,7 @@ contains
           cycle predictor
         end if
       end do corrector
-      conv_failed = 0
+      FailedCorrections = 0
 
       ! local truncation error test:
       ! checks if solution is good enough and, similar to the convergence
@@ -353,7 +354,7 @@ contains
         dt_scale = 0.2
         t = told
         call ResetSystem(this,dt_scale,dt,this%y_NS)
-        lte_iterator = lte_iterator + 1
+        FailedErrorTests = FailedErrorTests + 1
         this%UpdateJac = .true.
         this%update_dtorder = .true.
         this%dtorder_count = 0
