@@ -41,6 +41,7 @@ module odevec_main
     integer :: dtorder_count                                !> last step-size/order change
     logical :: UpdateJac
     integer :: LastJacobianUpdate
+    logical :: NeglectUpperOrder
     logical :: FirstStep
     logical :: update_dtorder
     logical :: check_negatives = .false.
@@ -50,6 +51,7 @@ module odevec_main
     double precision :: dt_min                              !> minimal timestep
     double precision :: ConvergenceRate                     !> rate of convergence
     double precision :: JacobianChange                      !> change of Jacobian
+    double precision :: MaximumStepChange                   !> maximal next timestep
     double precision :: OldCoefficient                      !> saves old coefficient
                                                             !> to determine JacobianChange
     double precision, pointer, dimension(:,:) :: y          !> current solution
@@ -166,6 +168,7 @@ contains
     this%ConvergenceRate = 0.7d0
     this%JacobianChange = 0.0
     this%OldCoefficient = 1.0
+    this%NeglectUpperOrder = .false.
 
     if (present(Mask)) then
       if (.not.any(Mask)) then
@@ -244,6 +247,7 @@ contains
     FailedErrorTests  = 0
     FailedCorrections   = 0
     this%UpdateJac = .true.
+    this%MaximumStepChange = 10.0
 
     ! needed in order to calculate the weighted norm
     call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
@@ -329,6 +333,7 @@ contains
         if(any(y(:,:)/=y(:,:))) ConvergenceFailed=.true.
 
         if (ConvergenceFailed.and..not.Converged) then
+          this%MaximumStepChange = 2.0
           dt_scale = 0.25
           t = told
           FailedCorrections = FailedCorrections + 1
@@ -337,7 +342,8 @@ contains
             stop
           end if
           CorrectorIterations = 0
-          call ResetSystem(this,dt_scale,dt,this%y_NS)
+          call ResetSystem(this,this%y_NS)
+          call SetStepSize(this,dt_scale,this%y_NS,dt)
           if (dt .lt. this%dt_min) then
             print *, "ODEVEC: Convergence failed! Abortion, because timestep too small."
             stop
@@ -355,31 +361,52 @@ contains
               tau(this%order,this%order,this%coeff)
       call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
       if (error > 1d0) then
-        dt_scale = 0.2
-        t = told
-        call ResetSystem(this,dt_scale,dt,this%y_NS)
+        if (FailedErrorTests.ge.3) then
+          dt_scale = 0.1
+          t = told
+          this%order = 1
+
+          y(:,:) = this%y_NS(:,:,0)
+          call GetRHS(this,y,this%rhs)
+
+          this%y_NS(:,:,1) = dt*this%rhs(:,:)
+
+          this%UpdateJac = .true.
+        else
+          dt_scale = 0.2
+          t = told
+
+          call ResetSystem(this,this%y_NS)
+
+          this%UpdateJac = .true.
+          this%dtorder_count = 0
+          this%MaximumStepChange = 2.0
+          this%NeglectUpperOrder = .true.
+        end if
+
+        call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
+
+        call SetStepSize(this,dt_scale,this%y_NS,dt)
+
         FailedErrorTests = FailedErrorTests + 1
-        this%UpdateJac = .true.
-        this%update_dtorder = .true.
-        this%dtorder_count = 0
         cycle predictor
       else
         this%dtorder_count = this%dtorder_count + 1
         this%LastJacobianUpdate = this%LastJacobianUpdate + 1
+
+        ! after a successfull run rewrite the history array
+        call UpdateNordsieck(this,this%en,this%y_NS)
+
+        if (this%dtorder_count.eq.this%order + 1) then
+          call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
+          call SetStepSize(this,dt_scale,this%y_NS,dt)
+        end if
+
+        FailedErrorTests = 0
+
         success = .true.
       end if
     end do predictor
-
-    ! after a successfull run rewrite the history array
-    call UpdateNordsieck(this,this%en,this%y_NS)
-
-    ! preparation for next step
-    ! 4. step-size/order control ----------------------------------------------!
-    ! calc. step size for order+(0,-1,+1) -> use largest for next step
-    if (this%update_dtorder.or.(this%dtorder_count.eq.this%order + 1)) then
-      call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
-
-    end if
 
     if (this%LastJacobianUpdate.ge.20) then
       this%UpdateJac = .true.
@@ -448,15 +475,11 @@ contains
   end subroutine CalcJac_sparse
 
   !> Resets the whole system to the state where the predictor starts
-  subroutine ResetSystem(this,dt_scale,dt,y_NS)
+  subroutine ResetSystem(this,y_NS)
     implicit none
     type(odevec)     :: this
-    integer          :: j,k,i,l
-    double precision :: dt_scale, dt
-    double precision, dimension(this%nvector,this%neq,0:6) :: y_NS
-    intent(in)       :: dt_scale
-    intent(inout)    :: y_NS, dt
-
+    integer          :: i,j,k,l
+    double precision, dimension(this%nvector,this%neq,0:6), intent(inout) :: y_NS
 
     ! set the matrix back to old value
     do k = 0,this%order-1
@@ -470,7 +493,6 @@ contains
       end do
     end do
 
-    call SetStepSize(this,dt_scale,y_NS,dt)
   end subroutine
 
   !> Calculates the step-sizes and uses according orders
@@ -495,7 +517,7 @@ contains
     dt_scale_same = 1.d0/(1.2*(WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
                           tau(order,order,this%coeff))**(1d0/(order+1d0)) + 1d-6)
     ! for higher order
-    if (order.eq.this%maxorder) then
+    if (order.eq.this%maxorder.or.this%NeglectUpperOrder) then
       dt_scale_up = 0d0
     else
       dt_scale_up   = 1.0d0/(1.4*(WeightedNorm(this,this%en-this%en_old,this%inv_weight_2,Mask)/ &
@@ -543,12 +565,9 @@ contains
 
     this%JacobianChange = this%JacobianChange*dt_scale
 
-
-    ! Adjust the Nordsieck history array with new step size & new order
-    call SetStepSize(this,dt_scale,this%y_NS,dt)
-
     this%update_dtorder = .false.
     this%dtorder_count = 0
+    this%NeglectUpperOrder = .false.
   end subroutine
 
 
