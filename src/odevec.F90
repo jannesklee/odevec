@@ -40,7 +40,7 @@ module odevec_main
     integer :: order                                        !> current order
     integer :: dtorder_count                                !> last step-size/order change
     logical :: UpdateJac
-    integer :: UpdateJac_count
+    integer :: LastJacobianUpdate
     logical :: FirstStep
     logical :: update_dtorder
     logical :: check_negatives = .false.
@@ -162,7 +162,6 @@ contains
     this%iterator    = 0
     this%dtorder_count = 0
     this%update_dtorder = .true.
-    this%UpdateJac_count = 0
     start_solver = .true.
     this%ConvergenceRate = 0.7d0
     this%JacobianChange = 0.0
@@ -191,7 +190,6 @@ contains
       do while (time < t_stop)
         ! solve the system
         call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU,Mask)
-        print *, time, y
 
         this%iterator = this%iterator + 1
       end do
@@ -279,7 +277,7 @@ contains
           call LUDecompose(this,this%LU,this%Piv)
         end if
         this%UpdateJac = .false.
-        this%UpdateJac_count = 0
+        this%LastJacobianUpdate = 0
         this%ConvergenceRate = 0.7d0
         this%JacobianChange = 1.0
       end if
@@ -367,7 +365,7 @@ contains
         cycle predictor
       else
         this%dtorder_count = this%dtorder_count + 1
-        this%UpdateJac_count = this%UpdateJac_count + 1
+        this%LastJacobianUpdate = this%LastJacobianUpdate + 1
         success = .true.
       end if
     end do predictor
@@ -383,7 +381,7 @@ contains
 
     end if
 
-    if (this%UpdateJac_count.ge.20) then
+    if (this%LastJacobianUpdate.ge.20) then
       this%UpdateJac = .true.
     else if (abs(this%JacobianChange - 1.0) .gt. 0.3) then
       this%UpdateJac = .true.
