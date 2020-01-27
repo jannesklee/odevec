@@ -36,39 +36,35 @@ module odevec_main
 #ODEVEC_REACTIONS
 #ODEVEC_MAXORDER
 #ODEVEC_NNZ
-    integer :: iterator                                     !> iterator
-    integer :: order                                        !> current order
-    integer :: dtorder_count                                !> last step-size/order change
-    logical :: UpdateJac
-    integer :: LastJacobianUpdate
-    logical :: NeglectUpperOrder
-    logical :: FirstStep
-    logical :: update_dtorder
-    logical :: check_negatives = .false.
+    integer :: Order                        !> current order
+    integer :: SuccessesWithoutUpdate       !> count successful steps
+    integer :: LastJacobianUpdate           !> count till last jacobian update
+    logical :: UpdateJac                    !> whether to update on next step
+    logical :: NeglectUpperOrder            !> no allowance for order increase
+    logical :: FirstStep                    !> extra handling for first step
 
-    double precision :: rtol                                !> relative tolerance
-    double precision :: atol                                !> absolute tolerance
-    double precision :: dt_min                              !> minimal timestep
-    double precision :: ConvergenceRate                     !> rate of convergence
-    double precision :: JacobianChange                      !> change of Jacobian
-    double precision :: MaximumStepChange                   !> maximal next timestep
-    double precision :: OldCoefficient                      !> saves old coefficient
-                                                            !> to determine JacobianChange
-    double precision, pointer, dimension(:,:) :: y          !> current solution
-                                                            !> array | often y_NS(:,:,0)
-    integer         , pointer, dimension(:,:) :: Piv        !> pivoting vector
-    integer         , pointer, dimension(:)   :: Perm       !> permutation vector
-    double precision, pointer, dimension(:,:) :: en         !> correction vector
-    double precision, pointer, dimension(:,:) :: en_old     !> old corr. vector
-    double precision, pointer, dimension(:,:) :: den        !> corrector of en
-    double precision, pointer, dimension(:,:) :: den_tmp    !> buffer array
-    double precision, pointer, dimension(:,:) :: inv_weight_2 !> error weight
-    double precision, pointer, dimension(:,:) :: rhs        !> right-hand-side
-    double precision, pointer, dimension(:,:) :: res        !> residuum
-    double precision, pointer, dimension(:,:) :: coeff      !> coefficient matrix
-    double precision, pointer, dimension(:,:) :: tautable   !> solution table for
-                                                            !> precomputation
-    double precision, pointer, dimension(:,:,:) :: y_NS     !> Nordsieck history array
+    double precision :: RelativeTolerance   !> relative tolerance
+    double precision :: AbsoluteTolerance   !> absolute tolerance
+    double precision :: MinimalTimestep     !> minimal timestep
+    double precision :: ConvergenceRate     !> rate of convergence
+    double precision :: JacobianChange      !> change of Jacobian
+    double precision :: MaximumStepChange   !> maximal next timestep
+    double precision :: OldCoefficient      !> saves old coefficient
+    double precision, allocatable, dimension(:,:) :: y          !> current solution
+                                                                !> array | often y_NS(:,:,0)
+    integer         , allocatable, dimension(:,:) :: Piv        !> pivoting vector
+    integer         , allocatable, dimension(:)   :: Perm       !> permutation vector
+    double precision, allocatable, dimension(:,:) :: en         !> correction vector
+    double precision, allocatable, dimension(:,:) :: en_old     !> old corr. vector
+    double precision, allocatable, dimension(:,:) :: den        !> corrector of en
+    double precision, allocatable, dimension(:,:) :: den_tmp    !> buffer array
+    double precision, allocatable, dimension(:,:) :: inv_weight_2 !> error weight
+    double precision, allocatable, dimension(:,:) :: rhs        !> right-hand-side
+    double precision, allocatable, dimension(:,:) :: res        !> residuum
+    double precision, allocatable, dimension(:,:) :: coeff      !> coefficient matrix
+    double precision, allocatable, dimension(:,:) :: tautable   !> solution table for
+                                                                !> precomputation
+    double precision, allocatable, dimension(:,:,:) :: y_NS     !> Nordsieck history array
 #ODEVEC_LU_MATRIX
 #ODEVEC_LU_METHOD
 #ODEVEC_PACKAGING
@@ -161,9 +157,7 @@ contains
     ! some initializations
     this%FirstStep   = .true.
     this%order       = 1
-    this%iterator    = 0
-    this%dtorder_count = 0
-    this%update_dtorder = .true.
+    this%SuccessesWithoutUpdate = 0
     start_solver = .true.
     this%ConvergenceRate = 0.7d0
     this%JacobianChange = 0.0
@@ -193,8 +187,6 @@ contains
       do while (time < t_stop)
         ! solve the system
         call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU,Mask)
-
-        this%iterator = this%iterator + 1
       end do
 
       call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y,Mask)
@@ -209,9 +201,9 @@ contains
     logical, intent(in), optional, dimension(this%nvector) :: Mask
 
     ! needed in order to calculate the weighted norm
-    call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
+    call CalcErrorWeightInvSquared(this,this%RelativeTolerance,this%AbsoluteTolerance,y,this%inv_weight_2)
 
-    tol = this%rtol
+    tol = this%RelativeTolerance
     W_inv2 = this%inv_weight_2*tol*tol
     W0 = max(abs(time),abs(t_stop))
 
@@ -250,7 +242,7 @@ contains
     this%MaximumStepChange = 10.0
 
     ! needed in order to calculate the weighted norm
-    call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
+    call CalcErrorWeightInvSquared(this,this%RelativeTolerance,this%AbsoluteTolerance,y,this%inv_weight_2)
 
     ! advance in time
     told = t
@@ -327,11 +319,6 @@ contains
                               CorrectorIterations,this%ConvergenceRate, &
                               ConvergenceFailed,Converged,Mask)
 
-        if (this%check_negatives) then
-          if(ANY(y.lt.-TINY(y))) ConvergenceFailed=.true.
-        end if
-        if(any(y(:,:)/=y(:,:))) ConvergenceFailed=.true.
-
         if (ConvergenceFailed.and..not.Converged) then
           this%MaximumStepChange = 2.0
           dt_scale = 0.25
@@ -344,7 +331,7 @@ contains
           CorrectorIterations = 0
           call ResetSystem(this,this%y_NS)
           call SetStepSize(this,dt_scale,this%y_NS,dt)
-          if (dt .lt. this%dt_min) then
+          if (dt .lt. this%MinimalTimestep) then
             print *, "ODEVEC: Convergence failed! Abortion, because timestep too small."
             stop
           end if
@@ -359,7 +346,7 @@ contains
       ! test, rerun from predictor with adjusted step size
       error = WeightedNorm(this,this%en,this%inv_weight_2,Mask)/ &
               tau(this%order,this%order,this%coeff)
-      call CalcErrorWeightInvSquared(this,this%rtol,this%atol,y,this%inv_weight_2)
+      call CalcErrorWeightInvSquared(this,this%RelativeTolerance,this%AbsoluteTolerance,y,this%inv_weight_2)
       if (error > 1d0) then
         if (FailedErrorTests.ge.3) then
           dt_scale = 0.1
@@ -379,7 +366,7 @@ contains
           call ResetSystem(this,this%y_NS)
 
           this%UpdateJac = .true.
-          this%dtorder_count = 0
+          this%SuccessesWithoutUpdate = 0
           this%MaximumStepChange = 2.0
           this%NeglectUpperOrder = .true.
         end if
@@ -391,13 +378,13 @@ contains
         FailedErrorTests = FailedErrorTests + 1
         cycle predictor
       else
-        this%dtorder_count = this%dtorder_count + 1
+        this%SuccessesWithoutUpdate = this%SuccessesWithoutUpdate + 1
         this%LastJacobianUpdate = this%LastJacobianUpdate + 1
 
         ! after a successfull run rewrite the history array
         call UpdateNordsieck(this,this%en,this%y_NS)
 
-        if (this%dtorder_count.eq.this%order + 1) then
+        if (this%SuccessesWithoutUpdate.eq.this%order + 1) then
           call CalcStepSizeOrder(this,dt_scale,this%order,dt,Mask)
           call SetStepSize(this,dt_scale,this%y_NS,dt)
         end if
@@ -565,8 +552,7 @@ contains
 
     this%JacobianChange = this%JacobianChange*dt_scale
 
-    this%update_dtorder = .false.
-    this%dtorder_count = 0
+    this%SuccessesWithoutUpdate = 0
     this%NeglectUpperOrder = .false.
   end subroutine
 
@@ -649,15 +635,15 @@ contains
 
 
   !> Calculates the error-weight of y for given tolerances
-  subroutine CalcErrorWeightInvSquared(this,rtol,atol,y,inv_weight_2)
+  subroutine CalcErrorWeightInvSquared(this,RelativeTolerance,AbsoluteTolerance,y,inv_weight_2)
     implicit none
     type(odevec)     :: this
-    double precision :: rtol, atol
+    double precision :: RelativeTolerance, AbsoluteTolerance
     double precision, dimension(this%nvector,this%neq) :: y, inv_weight_2
-    intent(in)       :: rtol, atol, y
+    intent(in)       :: RelativeTolerance, AbsoluteTolerance, y
     intent(out)      :: inv_weight_2
 
-    inv_weight_2(:,:) = 1./(rtol*abs(y(:,:)) + atol)
+    inv_weight_2(:,:) = 1./(RelativeTolerance*abs(y(:,:)) + AbsoluteTolerance)
     inv_weight_2(:,:) = inv_weight_2(:,:)*inv_weight_2(:,:)
   end subroutine CalcErrorWeightInvSquared
 

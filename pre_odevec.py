@@ -427,7 +427,7 @@ def ReplacePragmas(fh_list, fout):
             elif(srow == "#ODEVEC_REACTIONS"):
                 fout[k].write("    integer :: nrea=" + str(nrea) + "\n")
             elif(srow == "#ODEVEC_DT_MIN"):
-                fout[k].write( "    this%dt_min =" + str(args.dt_min) + "\n")
+                fout[k].write( "   this%MinimalTimestep =" + str(args.dt_min) + "\n")
             else:
                 srow = row.strip()
                 fout[k].write(row)
