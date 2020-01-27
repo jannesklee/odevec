@@ -446,7 +446,7 @@ contains
   end subroutine CalcJac_dense
 
   !> Calculates the Jacobian numerically
-  subroutine CalcJac_sparse(this,beta,GetRHS,y,dt,jac)
+  subroutine CalcJac_sparse(this,beta,GetRHS,y,dt,jac,Mask)
     implicit none
     type(odevec)     :: this
     integer          :: j,k,i
@@ -454,6 +454,7 @@ contains
     double precision :: beta,srur, dt
     double precision, dimension(this%nvector) :: deltay, r, fac, r0
     double precision, dimension(this%nvector,this%neq) :: y,ytmp,Drhs
+    logical, intent(in), optional, dimension(this%nvector) :: Mask
     type(csc_matrix) :: jac
 
 
@@ -794,7 +795,7 @@ contains
     type(odevec) :: this
     type(csc_matrix) :: LU
     double precision, dimension(this%nvector,this%neq) :: res, den
-    integer, dimension(this%neq) :: Piv
+    integer, dimension(this%nvector,this%neq) :: Piv
     double precision, dimension(this%nvector) :: mult
     integer :: i,j,k,kk
     intent(in) :: LU,Piv,res
@@ -891,7 +892,7 @@ contains
     type(csc_matrix) :: A
     double precision, dimension(this%nvector,this%neq) :: w !< temporary column
     double precision, dimension(this%nvector) :: alpha
-    integer,          dimension(this%neq) :: P
+    integer,          dimension(this%nvector,this%neq) :: P
 
     do k=1,this%neq
       ! scatter

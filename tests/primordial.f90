@@ -40,9 +40,9 @@ Program primordial
 
   allocate(rho_c(ode%nvector), x(ode%nvector,nmols))
 
-  ode%rtol = 1d-4
-  ode%atol = 1d-20
-  ode%dt_min = 1d-20
+  ode%RelativeTolerance = 1d-4
+  ode%AbsoluteTolerance = 1d-20
+  ode%MinimalTimestep = 1d-20
 
   x(:,:) = 1e-20
 
@@ -97,7 +97,7 @@ Program primordial
   print *, ""
   print *, "#-------------------------------------------------------#"
   print *, "simulation time:", (finish-start)/1d0
-  print *, "used tolerances (rel.,abs.):", ode%rtol, ode%atol
+  print *, "used tolerances (rel.,abs.):", ode%RelativeTolerance, ode%AbsoluteTolerance
   print *, "#-------------------------------------------------------#"
   print *, ""
 

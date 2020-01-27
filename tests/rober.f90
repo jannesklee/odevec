@@ -39,9 +39,9 @@ program rober
   do m=rtol_start,rtol_stop
     call cpu_time(start)
 
-    ode%rtol = 10d0**(-2d0-m*0.25d0)          ! relative tolerance
-    ode%atol = 1d-6*ode%rtol                  ! absolute tolerance
-    ode%dt_min = 1d-20
+    ode%RelativeTolerance = 10d0**(-2d0-m*0.25d0)          ! relative tolerance
+    ode%AbsoluteTolerance = 1d-6*ode%RelativeTolerance     ! absolute tolerance
+    ode%MinimalTimestep = 1d-20
 
     t_start = 0.0d0
     t_stop  = 0.0d0
@@ -65,7 +65,7 @@ program rober
     print *, ""
     print *, "#-------------------------------------------------------#"
     print *, "simulation time:", (finish-start)/1d0
-    print *, "used tolerances (rel.,abs.):", ode%rtol, ode%atol
+    print *, "used tolerances (rel.,abs.):", ode%RelativeTolerance, ode%AbsoluteTolerance
     print *, "#-------------------------------------------------------#"
     print *, ""
   end do
