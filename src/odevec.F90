@@ -402,8 +402,8 @@ contains
     integer          :: j,k,i
     external         :: GetRHS
     double precision :: beta,srur, dt,uround
-    double precision, dimension(this%nvector) :: deltay, r, fac, r0
-    double precision, dimension(this%nvector,this%neq) :: y,ytmp,Drhs
+    double precision, dimension(this%nvector) :: deltay, r, fac, r0, ytmp
+    double precision, dimension(this%nvector,this%neq) :: y,Drhs
     double precision, dimension(this%nvector,this%neq,this%neq) :: jac
     logical, intent(in), optional, dimension(this%nvector) :: Mask
 
@@ -417,15 +417,15 @@ contains
       r0 = 1d0
     end where
     do k = 1,this%neq
-      ytmp(:,k) = y(:,k)
-      r(:) = MAX(srur*abs(y(:,k)),r0(:)/this%inv_weight_2(:,k))
+      ytmp(:) = y(:,k)
+      r(:) = MAX(srur*abs(y(:,k)),r0(:)/sqrt(this%inv_weight_2(:,k)))
       y(:,k) = y(:,k) + r(:)
       fac(:) = -dt*beta/r
       call GetRHS(this, y, Drhs)
       do j = 1,this%neq
         jac(:,j,k) = (Drhs(:,j) - this%rhs(:,j))*fac
       end do
-      y(:,k) = ytmp(:,k)
+      y(:,k) = ytmp(:)
     end do
     do j = 1,this%neq
       jac(:,j,j) = 1 + jac(:,j,j)
