@@ -55,7 +55,6 @@ module odevec_main
     double precision :: OldCoefficient      !> saves old coefficient
     double precision, allocatable, dimension(:,:) :: y          !> current solution
                                                                 !> array | often y_NS(:,:,0)
-    integer         , allocatable, dimension(:,:) :: Piv        !> pivoting vector
     integer         , allocatable, dimension(:)   :: Perm       !> permutation vector
     double precision, allocatable, dimension(:,:) :: en         !> correction vector
     double precision, allocatable, dimension(:,:) :: en_old     !> old corr. vector
@@ -99,7 +98,6 @@ contains
     ! allocate fields
     allocate( &
               this%y(this%nvector,this%neq), &
-              this%Piv(this%nvector,this%neq), &
               this%Perm(this%neq), &
               this%en(this%nvector,this%neq), &
               this%en_old(this%nvector,this%neq), &
@@ -268,12 +266,12 @@ contains
       if (this%UpdateJac) then
         if (this%LUmethod.eq.1) then
           call GetJac(this,this%coeff(this%order,0),y,dt,this%LU)
-          call LUDecompose(this,this%LU,this%Piv)
+          call LUDecompose(this,this%LU)
         else if (this%LUmethod.eq.2) then
           call GetLU(this,this%coeff(this%order,0),y,dt,this%LU)
         else if (this%LUmethod.eq.3) then
           call CalcJac(this,this%coeff(this%order,0),GetRHS,y,dt,this%LU,Mask)
-          call LUDecompose(this,this%LU,this%Piv)
+          call LUDecompose(this,this%LU)
         end if
         this%UpdateJac = .false.
         this%LastJacobianUpdate = 0
@@ -733,14 +731,13 @@ contains
 
 
   !> Solve the DENSE System \f$ LU x=r \f$ with residuum r (res) and return x (den)
-  subroutine SolveLU_dense(this,LU,Piv,res,den)
+  subroutine SolveLU_dense(this,LU,res,den)
     implicit none
     type(odevec)   :: this
     double precision, dimension(this%nvector,this%neq,this%neq) :: LU
     double precision, dimension(this%nvector,this%neq)          :: res, den
-    integer         , dimension(this%nvector,this%neq)          :: Piv
     integer        :: i,j,k
-    intent(in)     :: LU,Piv,res
+    intent(in)     :: LU,res
     intent(inout)    :: den
 
 !NEC$ collapse
@@ -756,15 +753,12 @@ contains
 !NEC$ ivdep
         do i = 1,this%nvector
           this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,k,j)*this%den_tmp(i,j)
-!          this%den_tmp(i,k) = this%den_tmp(i,k) + LU(i,Piv(i,k),j)*this%den_tmp(i,j)
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
         this%den_tmp(i,k) = res(i,k) - this%den_tmp(i,k)
         this%den_tmp(i,k) = this%den_tmp(i,k)
-!        this%den_tmp(i,k) = res(i,Piv(i,k)) - this%den_tmp(i,k)
-!        this%den_tmp(i,k) = this%den_tmp(i,k)
       end do
     end do
 
@@ -780,15 +774,12 @@ contains
 !NEC$ ivdep
         do i = 1,this%nvector
           den(i,k) = den(i,k) + LU(i,k,j)*den(i,j)
-!          den(i,k) = den(i,k) + LU(i,Piv(i,k),j)*den(i,j)
         end do
       end do
 !NEC$ ivdep
       do i = 1,this%nvector
         den(i,k) = this%den_tmp(i,k) - den(i,k)
         den(i,k) = den(i,k)/LU(i,k,k)
-!        den(i,k) = this%den_tmp(i,k) - den(i,k)
-!        den(i,k) = den(i,k)/LU(i,Piv(i,k),k)
       end do
     end do
 
@@ -796,15 +787,14 @@ contains
 
 
   !> Solve the SPARSE System \f$ LU x=r \f$ with residuum r (res) and return x (den)
-  subroutine SolveLU_sparse(this,LU,Piv,res,den)
+  subroutine SolveLU_sparse(this,LU,res,den)
     implicit none
     type(odevec) :: this
     type(csc_matrix) :: LU
     double precision, dimension(this%nvector,this%neq) :: res, den
-    integer, dimension(this%nvector,this%neq) :: Piv
     double precision, dimension(this%nvector) :: mult
     integer :: i,j,k,kk
-    intent(in) :: LU,Piv,res
+    intent(in) :: LU,res
     intent(out) :: den
 
     den = res
@@ -842,35 +832,18 @@ contains
   !!
   !! Based on dgetrf from LAPACK. LU-decomposition with partial pivoting. Taken
   !! and modified from https://rosettacode.org/wiki/LU_decomposition#Fortran.
-  subroutine LUDecompose_dense(this,A,P)
+  subroutine LUDecompose_dense(this,A)
     implicit none
     type(odevec)   :: this
     integer        :: i, j, k, m, kmax
     double precision, dimension(this%nvector,this%neq,this%neq) :: A
-    integer,          dimension(this%nvector,this%neq) :: P
-    integer,          dimension(1) :: maxloc_ij!,kmax
+    integer,          dimension(1) :: maxloc_ij
     intent (inout) :: A
-    intent (out)   :: p
-
-    ! initialize P
-!    do i=1,this%nvector
-!      P(i,:) = [(j, j=1, this%neq)]
-!    end do
-!    do k = 1,this%neq-1
-!      do i=1,this%nvector
-!        maxloc_ij = maxloc(abs(A(i,P(i,k:),k)))
-!        kmax = maxloc_ij(1) + k - 1
-!        if (kmax /= k ) then
-!          P(i,[k, kmax]) = P(i,[kmax, k])
-!        end if
-!      end do
-!    end do
 
     do k = 1,this%neq-1
       do j = k+1,this%neq
 !NEC$ ivdep
         do i = 1,this%nvector
-!          A(i,P(i,j),k) = A(i,P(i,j),k) / A(i,P(i,k),k)
           A(i,j,k) = A(i,j,k) / A(i,k,k)
         end do
       end do
@@ -878,7 +851,6 @@ contains
         do m = k+1,this%neq
 !NEC$ ivdep
           do i = 1,this%nvector
-!            A(i,P(i,m),j) = A(i,P(i,m),j) - A(i,P(i,m),k) * A(i,P(i,k),j)
             A(i,m,j) = A(i,m,j) - A(i,m,k) * A(i,k,j)
           end do
         end do
@@ -891,14 +863,13 @@ contains
   !!
   !! Based on Duff, Erisman and Reid (2017): "Direct Methods for Sparse Matrices"
   !! Especially, ch. 10.3, pp. 210
-  subroutine LUDecompose_sparse(this,A,P)
+  subroutine LUDecompose_sparse(this,A)
     implicit none
     type(odevec) :: this
     integer        :: i, j, k, jj, kk
     type(csc_matrix) :: A
     double precision, dimension(this%nvector,this%neq) :: w !< temporary column
     double precision, dimension(this%nvector) :: alpha
-    integer,          dimension(this%nvector,this%neq) :: P
 
     do k=1,this%neq
       ! scatter
@@ -1027,7 +998,7 @@ contains
     integer :: err
 
     deallocate(this%y,this%en,this%en_old,this%den,this%den_tmp,this%inv_weight_2, &
-               this%rhs,this%Piv,this%Perm,this%res,this%coeff,this%tautable, &
+               this%rhs,this%Perm,this%res,this%coeff,this%tautable, &
                this%y_NS, &
                stat=err)
 
