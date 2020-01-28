@@ -39,6 +39,8 @@ module odevec_main
     integer :: Order                        !> current order
     integer :: SuccessesWithoutUpdate       !> count successful steps
     integer :: LastJacobianUpdate           !> count till last jacobian update
+    integer :: FailedErrorTests             !> count failed error tests
+    integer :: FailedCorrections            !> count failed convergence tests
     logical :: UpdateJac                    !> whether to update on next step
     logical :: NeglectUpperOrder            !> no allowance for order increase
     logical :: FirstStep                    !> extra handling for first step
@@ -163,6 +165,14 @@ contains
     this%JacobianChange = 0.0
     this%OldCoefficient = 1.0
     this%NeglectUpperOrder = .false.
+    this%den      = 0.0d0
+    this%FailedErrorTests  = 0
+    this%FailedCorrections   = 0
+    this%UpdateJac = .true.
+    this%MaximumStepChange = 10.0
+
+    ! needed in order to calculate the weighted norm
+    call CalcErrorWeightInvSquared(this,this%RelativeTolerance,this%AbsoluteTolerance,y,this%inv_weight_2)
 
     if (present(Mask)) then
       if (.not.any(Mask)) then
@@ -227,23 +237,10 @@ contains
     double precision :: dt, t, dt_scale, told
     integer          :: i,j,k
     double precision :: error
-    integer          :: CorrectorIterations, FailedCorrections, FailedErrorTests
+    integer          :: CorrectorIterations
     logical, intent(in), optional, dimension(this%nvector) :: Mask
     logical          :: success, ConvergenceFailed, Converged
     intent(inout)    :: y, dt, t
-
-    ! 1. initialization -------------------------------------------------------!
-    ! use the LU matrices from the predictor value
-    ! some initializations
-    this%den      = 0.0d0
-    FailedErrorTests  = 0
-    FailedCorrections   = 0
-    this%UpdateJac = .true.
-    this%MaximumStepChange = 10.0
-
-    ! needed in order to calculate the weighted norm
-    call CalcErrorWeightInvSquared(this,this%RelativeTolerance,this%AbsoluteTolerance,y,this%inv_weight_2)
-
     ! advance in time
     told = t
 
@@ -323,8 +320,8 @@ contains
           this%MaximumStepChange = 2.0
           dt_scale = 0.25
           t = told
-          FailedCorrections = FailedCorrections + 1
-          if (FailedCorrections .gt. 10) then
+          this%FailedCorrections = this%FailedCorrections + 1
+          if (this%FailedCorrections .gt. 10) then
             print *, "ODEVEC: Convergence failed! Abortion after more than 10 iterations."
             stop
           end if
@@ -339,7 +336,7 @@ contains
           cycle predictor
         end if
       end do corrector
-      FailedCorrections = 0
+      this%FailedCorrections = 0
 
       ! local truncation error test:
       ! checks if solution is good enough and, similar to the convergence
@@ -348,7 +345,7 @@ contains
               tau(this%order,this%order,this%coeff)
       call CalcErrorWeightInvSquared(this,this%RelativeTolerance,this%AbsoluteTolerance,y,this%inv_weight_2)
       if (error > 1d0) then
-        if (FailedErrorTests.ge.3) then
+        if (this%FailedErrorTests.ge.3) then
           dt_scale = 0.1
           t = told
           this%order = 1
@@ -375,7 +372,7 @@ contains
 
         call SetStepSize(this,dt_scale,this%y_NS,dt)
 
-        FailedErrorTests = FailedErrorTests + 1
+        this%FailedErrorTests = this%FailedErrorTests + 1
         cycle predictor
       else
         this%SuccessesWithoutUpdate = this%SuccessesWithoutUpdate + 1
@@ -389,7 +386,7 @@ contains
           call SetStepSize(this,dt_scale,this%y_NS,dt)
         end if
 
-        FailedErrorTests = 0
+        this%FailedErrorTests = 0
 
         success = .true.
       end if
