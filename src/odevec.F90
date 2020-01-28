@@ -44,6 +44,7 @@ module odevec_main
     logical :: UpdateJac                    !> whether to update on next step
     logical :: NeglectUpperOrder            !> no allowance for order increase
     logical :: FirstStep                    !> extra handling for first step
+    logical :: DoPermute                    !> skips permutation region if false
 
     double precision :: RelativeTolerance   !> relative tolerance
     double precision :: AbsoluteTolerance   !> absolute tolerance
@@ -137,6 +138,11 @@ contains
 
     ! permutations
 #ODEVEC_PERMUTATIONS
+    if(all(this%Perm.eq.(/(i, i=1, this%neq)/))) then
+      this%DoPermute = .false.
+    else
+      this%DoPermute = .true.
+    end if
 
     ! sparsity patterns
 #ODEVEC_SET_LU_SPARSITY
@@ -286,18 +292,21 @@ contains
         call CalcResiduum(this,dt,this%rhs,this%y_NS,this%en,this%res)
 
         ! calculates the solution for dy with given residuum
-        do i=1,this%neq
-          this%den(:,i) = this%res(:,this%Perm(i))
-        end do
-        this%res(:,:) = this%den(:,:)
+        if(this%DoPermute) then
+          do i=1,this%neq
+            this%den(:,i) = this%res(:,this%Perm(i))
+          end do
+          this%res(:,:) = this%den(:,:)
+        end if
 
-        call SolveLU(this,this%LU,this%Piv,this%res,this%den)
+        call SolveLU(this,this%LU,this%res,this%den)
 
-        do i=1,this%neq
-          this%res(:,this%Perm(i)) = this%den(:,i)
-        end do
-        this%den(:,:) = this%res(:,:)
-
+        if(this%DoPermute) then
+          do i=1,this%neq
+            this%res(:,this%Perm(i)) = this%den(:,i)
+          end do
+          this%den(:,:) = this%res(:,:)
+        end if
 
         ! add correction to solution vector
         this%en(:,:) = this%en(:,:) + this%den(:,:)
