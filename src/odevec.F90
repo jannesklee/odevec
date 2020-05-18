@@ -576,6 +576,7 @@ contains
     intent(inout)    :: ConvergenceRate, ConvergenceFailed, CorrectorIterations, Converged
 
     ConvergenceError_tmp = WeightedNorm(this,den,inv_weight_2,Mask)
+    if (any(den/=den)) ConvergenceError_tmp = HUGE(1.0)
     if (CorrectorIterations.ne.0) then
       ConvergenceRate_tmp = ConvergenceError_tmp/ConvergenceError
       ConvergenceRate = max(0.2d0*ConvergenceRate,ConvergenceRate_tmp)
