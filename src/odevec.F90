@@ -576,7 +576,6 @@ contains
     intent(inout)    :: ConvergenceRate, ConvergenceFailed, CorrectorIterations, Converged
 
     ConvergenceError_tmp = WeightedNorm(this,den,inv_weight_2,Mask)
-    if (any(den/=den)) ConvergenceError_tmp = HUGE(1.0)
     if (CorrectorIterations.ne.0) then
       ConvergenceRate_tmp = ConvergenceError_tmp/ConvergenceError
       ConvergenceRate = max(0.2d0*ConvergenceRate,ConvergenceRate_tmp)
@@ -584,6 +583,13 @@ contains
 
     ConvergenceCriterion = ConvergenceError_tmp*min(1d0,1.5d0*ConvergenceRate)/ &
                  (tau(this%order,this%order,this%coeff)/(2d0*(this%order + 2d0)))
+
+    ! sanity checks - these are important in extreme cases were NaNs resuls from
+    ! the predictor or following routines
+    if (any(den/=den).or.any(inv_weight_2/=inv_weight_2)) then
+      ConvergenceFailed = .true.
+      return
+    end if
 
     if (ConvergenceCriterion.lt.1.0) then
       Converged = .true.
