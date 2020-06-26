@@ -261,6 +261,21 @@ contains
 
       ! predictor step - set predicted y_NS, en=0.0
       call PredictSolution(this,this%y_NS,this%en)
+
+      if (this%CheckNegatives) then
+        if(any(this%y_NS(:,:,0).lt.0.0.and.spread(Mask,2,this%neq))) then
+          dt_scale = 0.25
+          t = told
+          call ResetSystem(this,this%y_NS)
+          call SetStepSize(this,dt_scale,this%y_NS,dt)
+          if (dt.le.this%MinimalTimestep) then
+            print *, "Below minimal timestep after Predictor. Aborting.. "
+            stop
+          end if
+          cycle predictor
+        end if
+      end if
+
       if (present(Mask)) then
         where (spread(Mask,2,this%neq))
           y(:,:) = this%y_NS(:,:,0)
