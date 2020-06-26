@@ -370,6 +370,14 @@ contains
           t = told
           this%order = 1
 
+          if (present(Mask)) then
+            where (spread(Mask,2,this%neq))
+              y(:,:) = this%y_NS(:,:,0)
+            end where
+          else
+            y(:,:) = this%y_NS(:,:,0)
+          end if
+
           y(:,:) = this%y_NS(:,:,0)
           call GetRHS(this,y,this%rhs)
 
