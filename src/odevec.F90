@@ -338,7 +338,7 @@ contains
         end if
 
         if (this%CheckNegatives) then
-          if(any(y(:,:).lt.0.0)) then
+          if(any(y(:,:).lt.0.0.and.spread(Mask,2,this%neq))) then
             this%ErrorCode = 1
           end if
         end if
