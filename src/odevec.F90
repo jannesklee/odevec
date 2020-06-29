@@ -46,7 +46,6 @@ module odevec_main
     logical :: FirstStep                    !> extra handling for first step
     logical :: DoPermute                    !> skips permutation region if false
     logical :: CheckNegatives               !> flag for checking negatives in y
-    integer :: ErrorCode                    !> value to return error
 
     double precision :: RelativeTolerance   !> relative tolerance
     double precision :: AbsoluteTolerance   !> absolute tolerance
@@ -178,7 +177,6 @@ contains
     this%FailedCorrections   = 0
     this%UpdateJac = .true.
     this%MaximumStepChange = 10.0
-    this%ErrorCode = 0
 
     ! needed in order to calculate the weighted norm
     call CalcErrorWeightInvSquared(this,this%RelativeTolerance,this%AbsoluteTolerance,y,this%inv_weight_2)
@@ -206,7 +204,6 @@ contains
       do while (time < t_stop)
         ! solve the system
         call SolveLinearSystem(this,time,dt,y,GetRHS,GetJac,GetLU,Mask)
-        if (this%ErrorCode.ne.0) return
       end do
 
       call InterpolateSolution(this,time,dt,t_stop,this%order,this%y_NS,y,Mask)
@@ -336,13 +333,6 @@ contains
         else
           y(:,:) = this%y_NS(:,:,0) + this%coeff(this%order,0)*this%en
         end if
-
-        if (this%CheckNegatives) then
-          if(any(y(:,:).lt.0.0.and.spread(Mask,2,this%neq))) then
-            this%ErrorCode = 1
-          end if
-        end if
-        if(this%ErrorCode.ne.0) return
 
         ! convergence test:
         ! if fail reset and run again starting at predictor step with 0.25
