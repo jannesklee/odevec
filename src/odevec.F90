@@ -145,6 +145,9 @@ contains
 
     this%CheckNegatives = .false.
 
+    this%y = 0.0
+    this%y_NS = 0.0
+
     ! sparsity patterns
 #ODEVEC_SET_LU_SPARSITY
 
@@ -383,7 +386,6 @@ contains
             y(:,:) = this%y_NS(:,:,0)
           end if
 
-          y(:,:) = this%y_NS(:,:,0)
           call GetRHS(this,y,this%rhs)
 
           this%y_NS(:,:,1) = dt*this%rhs(:,:)
