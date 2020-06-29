@@ -344,6 +344,13 @@ contains
                               CorrectorIterations,this%ConvergenceRate, &
                               ConvergenceFailed,Converged,Mask)
 
+        if (this%CheckNegatives) then
+          if(any(y(:,:).lt.0.0.and.spread(Mask,2,this%neq))) then
+            ConvergenceFailed = .True.
+            Converged = .False.
+          end if
+        end if
+
         if (ConvergenceFailed.and..not.Converged) then
           this%MaximumStepChange = 2.0
           dt_scale = 0.25
