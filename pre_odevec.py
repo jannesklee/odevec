@@ -271,7 +271,12 @@ def GetSystemToSolve(nvector,example,kromefile=""):
     elif (example=="KROME"):
         print("#  Setup: KROME file read in")
 
-        exec(open(kromefile).read())
+        exec(open(kromefile).read(), globals())
+        vardict= globals()
+        y = vardict["y"]
+        rhs = vardict["rhs"]
+        neq = vardict["neq"]
+        nrea = vardict["nrea"]
 
     return y, rhs, nvector, neq, maxorder, nrea
 
