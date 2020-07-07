@@ -263,16 +263,30 @@ contains
       call PredictSolution(this,this%y_NS,this%en)
 
       if (this%CheckNegatives) then
-        if(any(this%y_NS(:,:,0).lt.0.0.and.spread(Mask,2,this%neq))) then
-          dt_scale = 0.25
-          t = told
-          call ResetSystem(this,this%y_NS)
-          call SetStepSize(this,dt_scale,this%y_NS,dt)
-          if (dt.le.this%MinimalTimestep) then
-            print *, "Below minimal timestep after Predictor. Aborting.. "
-            stop
+        if (present(Mask)) then
+          if(any(this%y_NS(:,:,0).lt.0.0.and.spread(Mask,2,this%neq))) then
+            dt_scale = 0.25
+            t = told
+            call ResetSystem(this,this%y_NS)
+            call SetStepSize(this,dt_scale,this%y_NS,dt)
+            if (dt.le.this%MinimalTimestep) then
+              print *, "Below minimal timestep after Predictor. Aborting.. "
+              stop
+            end if
+            cycle predictor
           end if
-          cycle predictor
+        else
+          if(any(this%y_NS(:,:,0).lt.0.0)) then
+            dt_scale = 0.25
+            t = told
+            call ResetSystem(this,this%y_NS)
+            call SetStepSize(this,dt_scale,this%y_NS,dt)
+            if (dt.le.this%MinimalTimestep) then
+              print *, "Below minimal timestep after Predictor. Aborting.. "
+              stop
+            end if
+            cycle predictor
+          end if
         end if
       end if
 
@@ -345,9 +359,16 @@ contains
                               ConvergenceFailed,Converged,Mask)
 
         if (this%CheckNegatives) then
-          if(any(y(:,:).lt.0.0.and.spread(Mask,2,this%neq))) then
-            ConvergenceFailed = .True.
-            Converged = .False.
+          if (present(Mask)) then
+            if(any(y(:,:).lt.0.0.and.spread(Mask,2,this%neq))) then
+              ConvergenceFailed = .True.
+              Converged = .False.
+            end if
+          else
+            if(any(y(:,:).lt.0.0)) then
+              ConvergenceFailed = .True.
+              Converged = .False.
+            end if
           end if
         end if
 
