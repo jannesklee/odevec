@@ -5,14 +5,12 @@ with relatively small Jacobians optimized on throughput. This is reached through
 a Python pre-processor that prepares the stiff and sparse equation system symbolically and writes
 down the outcome in Fortran syntax in source-file templates.
 
-    Version : 0.0.0
+    Version : 0.1.0
     Author  : Jannes Klee
     Contact : jklee@astrophysik.uni-kiel.de
 
 OdeVec is orginally written to solve chemical networks as passives scalars within the hydro-code
 Fosite.
-
-Info: Sparsity is not included yet.
 
 # General Usage Notes
 
