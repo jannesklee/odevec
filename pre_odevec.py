@@ -670,8 +670,8 @@ if __name__ == '__main__':
     LU, Piv = P_order.LUdecomposition_Simple()
 
     # save information for sparsity structure
-    print("#  NNZs in Jacobian: " + str(P.nnz()) + " | Sparsity: " + str(float(P.nnz())/(neq*neq)))
-    print("#  NNZs in LU-Matrix: " + str(LU.nnz()) + " | Sparsity: " + str(float(LU.nnz())/(neq*neq)))
+    print("#  NNZs in Jacobian: " + str(P.nnz()) + " | Sparsity: " + str(1-float(P.nnz())/(neq*neq)))
+    print("#  NNZs in LU-Matrix: " + str(LU.nnz()) + " | Sparsity: " + str(1-float(LU.nnz())/(neq*neq)))
 
     # Choose packaging
     if(args.packaging=="CSC"):
