@@ -365,7 +365,7 @@ def ReplacePragmas(fh_list, fout):
                 if(args.heatcool==1):
                         fout[k].write("      dy0(:) = " + krome_heatcool_string0 + "\n")
             elif(srow == "#ODEVEC_PERMUTATIONS"):
-                fout[k].write( "    this%Perm = " +
+                fout[k].write( "    this%Perm = & \n" +
                               fcode(Perm+1, source_format='free', standard=95) + "\n")
             elif(srow == "#ODEVEC_LU_METHOD"):
                 fout[k].write("    INTEGER :: LUmethod = " + str(int(LUmethod)) + "\n")
