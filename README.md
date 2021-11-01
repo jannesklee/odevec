@@ -11,10 +11,10 @@ down the outcome in Fortran syntax in source-file templates.
 
 OdeVec is orginally written to solve chemical networks within the vectorized hydro-code [Fosite](https://github.com/tillense/fosite).
 
-The implementation is based on the algorithm described in
-[Description of LSODE](https://computing.llnl.gov/sites/default/files/ODEPACK_pub2_u113855.pdf),
-which is included in [ODEPACK](https://computing.llnl.gov/projects/odepack/publications), by A. C. Hindmarsh.
-It is a [BDF](https://en.wikipedia.org/wiki/Backward_differentiation_formula)-method.
+The implementation is based on the
+[BDF](https://en.wikipedia.org/wiki/Backward_differentiation_formula)-method described in
+[LSODE](https://computing.llnl.gov/sites/default/files/ODEPACK_pub2_u113855.pdf)
+from [ODEPACK](https://computing.llnl.gov/projects/odepack/publications) by A. C. Hindmarsh.
 
 # General Usage Notes
 
