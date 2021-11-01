@@ -34,5 +34,4 @@ and linking
 
 Finally run
 
-    ./primordial
-
+    ./rober
