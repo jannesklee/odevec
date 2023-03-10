@@ -41,7 +41,7 @@ import numpy as np
 import argparse
 
 
-def GetSystemToSolve(nvector,example,kromefile=""):
+def get_system_to_solve(nvector,example,kromefile=""):
     """ Sets up the right-hand-side of the problem
 
     Defines the RHS that should be solved. Currently there are three
@@ -95,9 +95,10 @@ def GetSystemToSolve(nvector,example,kromefile=""):
         # define sympy symbols
         y = list(symbols('y(\:\,1:%d)'%(neq+1)))
 
-        rhs = Matrix([-0.04*y[0]+1e4*y[1]*y[2],
-                      0.04*y[0]-3e7*y[1]*y[1]-1e4*y[1]*y[2],
-                      3e7*y[1]*y[1]])
+        rhs = Matrix(
+                [-0.04*y[0]+1e4*y[1]*y[2],
+                 0.04*y[0]-3e7*y[1]*y[1]-1e4*y[1]*y[2],
+                 3e7*y[1]*y[1]])
 
     # Primordial network with 16 different species
     elif (example=="PRIMORDIAL"):
@@ -283,7 +284,7 @@ def GetSystemToSolve(nvector,example,kromefile=""):
 # replaces the pragmas with fortran syntax
 
 
-def ReplacePragmas(fh_list, fout):
+def replace_pragmas(fh_list, fout):
     """
         Replaces pragmas in the *.F90 files. This includes writing out the
         different Jacobian or the LU-matrix in fortran syntax and writing
@@ -438,7 +439,7 @@ def ReplacePragmas(fh_list, fout):
                 fout[k].write(row)
 
 
-def ReorderSystemCMK(P,y,rhs):
+def reorder_system_cmk(P,y,rhs):
     """
     Reorders the Jacobian in order to have a better LU matrix
     with the CMK algorithm.
@@ -490,7 +491,7 @@ def ReorderSystemCMK(P,y,rhs):
     return P_order,y_order,rhs_order,Perm
 
 
-def ReorderSystemInvert(P,y,rhs):
+def reorder_system_invert(P,y,rhs):
     """
     Reorders the Jacobian in order to have a better LU matrix by
     inverting the matrix (graphically).
@@ -510,7 +511,7 @@ def ReorderSystemInvert(P,y,rhs):
     return P_order,y_order,rhs_order,Perm
 
 
-def ReorderSystemFewestFirst(P,y,rhs):
+def reorder_system_fewest_first(P,y,rhs):
     """
     Reorders the Jacobian by ordering after the combined amount
     of non-zeros along a column and rows.
@@ -637,7 +638,7 @@ if __name__ == '__main__':
 
     # get right-hand-side and other
     y, rhs, nvector, neq, maxorder, nrea = \
-            GetSystemToSolve(args.nvector,example=args.example,kromefile=args.krome_setupfile)
+            get_system_to_solve(args.nvector,example=args.example,kromefile=args.krome_setupfile)
 
     # calculate jacobian
     jac = rhs.jacobian(y)
@@ -652,11 +653,11 @@ if __name__ == '__main__':
 
     # Reorder the system if chosen so
     if(args.ordering=="CMK"):
-        P_order, y_order, rhs_order, Perm = ReorderSystemCMK(P,y,rhs)
+        P_order, y_order, rhs_order, Perm = reorder_system_cmk(P,y,rhs)
     elif(args.ordering=="INVERT"):
-        P_order, y_order, rhs_order, Perm = ReorderSystemInvert(P,y,rhs)
+        P_order, y_order, rhs_order, Perm = reorder_system_invert(P,y,rhs)
     elif(args.ordering=="FF"):
-        P_order, y_order, rhs_order, Perm = ReorderSystemFewestFirst(P,y,rhs)
+        P_order, y_order, rhs_order, Perm = reorder_system_fewest_first(P,y,rhs)
     else:
         P_order = P
         y_order = y
@@ -738,7 +739,7 @@ if __name__ == '__main__':
 
     # search for pragmas and replace them with the correct
     print("#  Replacing pragmas in Fortran source code..")
-    ReplacePragmas(fh_list, fout)
+    replace_pragmas(fh_list, fout)
     for fout_single in fout: print("#  Wrote out file: " + fout_single.name)
 
     # some command line output
