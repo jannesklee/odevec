@@ -1,0 +1,6 @@
+# Python dependencies for OdeVec preprocessor
+# These are the external packages required to run pre_odevec.py
+
+sympy>=1.5.0
+scipy>=1.4.0
+numpy>=1.18.0
