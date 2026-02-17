@@ -38,7 +38,7 @@ The implementation is based on the [BDF](https://en.wikipedia.org/wiki/Backward_
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/odevec.git
+   git clone https://github.com/jannesklee/odevec.git
    cd odevec
    ```
 
@@ -221,7 +221,7 @@ Contributions are welcome! Please follow these guidelines:
 ### Development Setup
 
 ```bash
-git clone https://github.com/yourusername/odevec.git
+git clone https://github.com/jannesklee/odevec.git
 cd odevec
 pip install -r requirements.txt
 ```
@@ -239,7 +239,7 @@ If you use OdeVec in your research, please cite:
   author = {Jannes Klee},
   title = {OdeVec: A vectorized ODE solver for stiff chemical networks},
   year = {2019},
-  howpublished = {\url{https://github.com/yourusername/odevec}}
+  howpublished = {\url{https://github.com/jannesklee/odevec}}
 }
 ```
 
@@ -248,7 +248,7 @@ If you use OdeVec in your research, please cite:
 For questions, issues, or collaboration opportunities:
 - **Author**: Jannes Klee
 - **Email**: jklee@astrophysik.uni-kiel.de
-- **GitHub**: [yourusername/odevec](https://github.com/yourusername/odevec)
+- **GitHub**: [jannesklee/odevec](https://github.com/jannesklee/odevec)
 
 ## Acknowledgements
 
